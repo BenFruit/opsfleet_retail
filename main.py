@@ -2,6 +2,7 @@ from retail_agent.llm.client import GeminiClient
 from retail_agent.llm.sql_generator import SQLGenerator
 from retail_agent.data.bigquery_runner import BigQueryRunner
 from retail_agent.schema.service import SchemaService
+from sqlglot import parse_one, exp
 
 def main():
     runner = BigQueryRunner(project_id='opsfleet-assessment-yerassyl')
@@ -23,6 +24,8 @@ def main():
 
         print("\nExplanation:\n")
         print(result.explanation)
+        tree = parse_one(result.sql, read="bigquery")
+        print(tree)
 
     finally:
         llm.close()
