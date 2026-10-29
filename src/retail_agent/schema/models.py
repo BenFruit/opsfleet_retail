@@ -1,18 +1,21 @@
 from enum import Enum
+
 from pydantic import BaseModel
 
 
-class SensitivityLevel(str, Enum):
-    # Safe for normal analytical use.
-    SAFE = "safe"
-    # Doesnt directly identify a person, but in combination does
-    QUASI_IDENTIFIER = "quasi_identifier"
-    # Directly identifies or can be used to contact a specific person.
-    DIRECT_PII = "direct_pii"
+class DataAccessLevel(str, Enum):
+    # Can be used normally in analysis and returned at row level.
+    ALLOWED = "allowed"
 
+    # Can be used only in aggregated analysis.
+    # Must not be exposed as individual-level customer attributes.
+    AGGREGATE_ONLY = "aggregate_only"
 
+    # Personally identifiable information.
+    # Must be removed or masked before any data reaches the LLM.
+    BLOCKED_PII = "blocked_pii"
 
 
 class ColumnPolicy(BaseModel):
-    sensitivity: SensitivityLevel
+    access_level: DataAccessLevel
     description: str = ""
