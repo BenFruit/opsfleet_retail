@@ -1,4 +1,4 @@
-from schema.models import ColumnPolicy, DataAccessLevel
+from .models import ColumnPolicy, DataAccessLevel
 
 
 USER_COLUMN_POLICIES = {
