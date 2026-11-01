@@ -1,0 +1,41 @@
+# Confirmed access and demographic policy
+
+Source: user-provided Slack replies from Harry and Vlad. These clarifications
+override earlier open questions in HANDOFF.md. They do not imply every rule is
+already implemented; see implementation status below.
+
+## Confirmed rules
+
+1. Names, email, street address, postal code, precise coordinates and related
+   direct PII must never reach the LLM or final output.
+2. City, state, country, age, gender and traffic source are aggregate-only.
+3. Customer user_id or a stable pseudonymous ID may be used for individual
+   non-demographic analysis and follow-ups.
+4. A demographic filter followed by individual customer output reveals the
+   attribute even if it is not selected. Block such output or answer with an
+   aggregate instead. Example: do not list IDs of 26-year-old customers.
+5. Counts, averages and grouped demographic statistics are permitted. An output
+   tying a demographic attribute to one person (e.g. the age of the top spender)
+   must be blocked, regardless of whether SQL uses an aggregate function.
+6. Small-group suppression protects demographic results. A product's revenue
+   with only two buyers may be shown without customer identities or demographics.
+   Where suppression applies must be documented. No numerical minimum was
+   mandated; any chosen default should be configurable and documented.
+7. Brand is the access dimension. Managers' customer/spend metrics include only
+   purchases of authorized brands. A simple mock entitlement mapping is accepted.
+8. For the prototype, SQL checks, access enforcement and small-group suppression
+   in code are sufficient. Cross-question inference checks are NOT required in
+   code; describe the risk and production mitigation in the HLD.
+
+## Implementation status
+
+- Direct PII source references are rejected; brand-scoped SQL execution exists.
+- Customer IDs and non-demographic financial analysis are supported.
+- A structured demographic tool generates aggregate SQL and enforces configurable
+  cohort suppression. Free-form SQL is for non-demographic analysis. The default
+  is 5 distinct contributing buyers (CLI --min-cohort-size, minimum 2), not a
+  client-mandated threshold. Ordinary product revenue is not suppressed.
+  See QUERY_SAFETY.md for the current contract and archive/ for the old approach.
+- Generic free-text PII detection is not solved by the current email/phone checks.
+- Cross-question inference remains a documented production concern, not a planned
+  prototype subsystem.

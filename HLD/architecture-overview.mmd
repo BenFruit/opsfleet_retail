@@ -1,0 +1,12 @@
+flowchart LR
+    U["Executive / CLI"] --> APP["Chat Application"]
+    APP --> AG["Agent Orchestrator"]
+    AG <--> LLM["Gemini API"]
+    AG <--> K["Golden Knowledge + Preferences"]
+    AG <--> QS["Governed Query Service"]
+    QS <--> DB[("BigQuery: TheLook")]
+    AG <--> REP[("Saved Reports")]
+    AG --> OUT["Checked Final Answer"]
+    OUT --> U
+    AG -.-> OBS["PII-safe Traces + Metrics"]
+    QS -.-> OBS

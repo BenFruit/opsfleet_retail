@@ -1,0 +1,11 @@
+flowchart TD
+    U["User asks to delete reports"] --> AUTH["Authenticate session"]
+    AUTH --> FIND["Find matching reports OWNED by this user"]
+    FIND --> PREVIEW["Show exact report IDs, titles, count and scope"]
+    PREVIEW --> ASK{"Explicit confirmation?"}
+    ASK -->|"No / timeout / ambiguity"| CANCEL["Cancel — no deletion"]
+    ASK -->|"Yes"| VERIFY["Recheck owner + pending-action token"]
+    VERIFY -->|"Valid"| DELETE["Delete exact reviewed report IDs"]
+    VERIFY -->|"Invalid / changed"| CANCEL
+    DELETE --> AUDIT["Safe audit record + outcome"]
+    AUDIT --> DONE["Confirm deleted count"]

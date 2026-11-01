@@ -1,0 +1,23 @@
+flowchart TD
+    U["User question + trusted access context"] --> INIT["Initialize safe state and budgets"]
+    INIT --> THINK["Gemini: reason from safe observations"]
+    THINK --> DEC{"Next action?"}
+    DEC -->|"Explore / analyze"| PLAN["Generate structured SQL"]
+    PLAN --> VALID["AST validation + authorized product scope"]
+    VALID -->|"Allowed"| DRY["Dry run + scanned bytes cap"]
+    DRY -->|"Within budget"| RUN["BigQuery execute"]
+    RUN --> SAN["Result sanitizer BEFORE LLM"]
+    SAN --> STATE["Store bounded safe observation"]
+    STATE --> LIMIT{"Step / budget remaining?"}
+    LIMIT -->|"Yes"| THINK
+    LIMIT -->|"No"| PARTIAL["Answer with limitations"]
+    VALID -->|"Rejected"| ERR["Safe error + bounded repair"]
+    DRY -->|"Invalid / over budget"| ERR
+    RUN -->|"Query failure"| ERR
+    ERR --> RETRY{"Retry permitted?"}
+    RETRY -->|"Yes"| THINK
+    RETRY -->|"No"| PARTIAL
+    DEC -->|"Enough evidence"| ANSWER["Synthesize report"]
+    ANSWER --> FINAL["Final output guard"]
+    PARTIAL --> FINAL
+    FINAL --> U

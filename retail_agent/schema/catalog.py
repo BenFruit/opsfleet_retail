@@ -85,3 +85,6 @@ TABLE_POLICIES = {
     "order_items": ORDER_ITEMS_COLUMN_POLICIES,
     "products": PRODUCTS_COLUMN_POLICIES,
 }
+
+CATALOG_NAME = "bigquery-public-data"
+DB_NAME = "thelook_ecommerce"

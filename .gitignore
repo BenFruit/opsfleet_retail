@@ -1,2 +1,7 @@
 .venv
 /.env
+.HLD/agent-loop.mmd
+/access.local.json
+/logs/
+__pycache__/
+*.pyc
