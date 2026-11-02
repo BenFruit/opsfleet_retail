@@ -14,6 +14,9 @@ Keep these three levels separate in the final submission:
 
 ## Historical reference
 
+Current tracing decision and deferred PII/access improvements:
+[OBSERVABILITY_AND_ACCESS.md](OBSERVABILITY_AND_ACCESS.md).
+
 [archive/sql-demographic-validator-v1.md](archive/sql-demographic-validator-v1.md)
 preserves the old aggregate-policy and SQL-validator source plus the former
 execution/result contract. It explains why we moved from checking model-authored

@@ -260,7 +260,7 @@ class AnalyticalAgentTests(unittest.TestCase):
             self.agent.ask(question)
         self.assertEqual([turn["question"] for turn in self.agent.history], ["Two", "Three"])
 
-    def test_external_langsmith_tracing_is_disabled_even_if_environment_enables_it(self):
+    def test_external_langsmith_tracing_stays_disabled_even_if_enabled_in_environment(self):
         def decide(**kwargs):
             self.assertIs(get_tracing_context()["enabled"], False)
             return answer("Schema information")
@@ -268,6 +268,20 @@ class AnalyticalAgentTests(unittest.TestCase):
         self.analyst.decide.side_effect = decide
         with patch.dict(os.environ, {"LANGSMITH_TRACING": "true"}):
             self.agent.ask("What data is available?")
+
+    def test_langfuse_callback_reaches_graph_with_turn_metadata(self):
+        # Stub the graph to inspect configuration without exporting test data.
+        callback = object()
+        def invoke(state, config):
+            self.assertIs(get_tracing_context()["enabled"], False)
+            self.assertEqual(config["run_name"], "retail_question")
+            self.assertEqual(config["metadata"]["turn_id"], state["turn_id"])
+            self.assertEqual(config["callbacks"], [callback])
+            return {**state, "answer": "Schema information"}
+
+        with patch("retail_agent.agent.orchestrator.get_callbacks", return_value=[callback]):
+            with patch.object(self.agent.graph, "invoke", side_effect=invoke):
+                self.assertEqual(self.agent.ask("What data is available?").answer, "Schema information")
 
     def test_action_shape_is_validated(self):
         for data in (

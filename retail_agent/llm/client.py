@@ -7,6 +7,7 @@ from google.genai import errors as genai_errors
 from google.genai import types
 from typing import TypeVar
 from pydantic import BaseModel, ValidationError
+from retail_agent.observability.tracing import trace_generation
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -131,30 +132,35 @@ class GeminiClient:
         self, prompt: str, response_schema: type[T], *, system_instruction: str | None = None,
     ) -> T:
         self.last_usage = {}
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.1,
-                system_instruction=system_instruction,
-                max_output_tokens=4096,
-                response_mime_type="application/json",
-                # Pass JSON Schema as-is. The typed response_schema conversion
-                # maps additionalProperties into additional_properties, which
-                # this Gemini endpoint rejects. Local Pydantic validation stays strict.
-                response_json_schema=response_schema.model_json_schema(),
-            ),
-        )
-
-        usage = response.usage_metadata
-        if usage is not None:
-            self.last_usage = {
-                "input_tokens": usage.prompt_token_count or 0,
-                "output_tokens": usage.candidates_token_count or 0,
-                "total_tokens": usage.total_token_count or 0,
-            }
-
-        return response_schema.model_validate_json(_response_text(response))
+        with trace_generation(self.model, prompt, system_instruction) as observation:
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.1,
+                    system_instruction=system_instruction,
+                    max_output_tokens=4096,
+                    response_mime_type="application/json",
+                    # Preserve JSON Schema as-is; typed SDK conversion previously
+                    # produced additional_properties rejected by this endpoint.
+                    response_json_schema=response_schema.model_json_schema(),
+                ),
+            )
+            usage = response.usage_metadata
+            if usage is not None:
+                self.last_usage = {
+                    "input_tokens": usage.prompt_token_count or 0,
+                    "output_tokens": usage.candidates_token_count or 0,
+                    "total_tokens": usage.total_token_count or 0,
+                }
+            action = response_schema.model_validate_json(_response_text(response))
+            if observation is not None:
+                observation.update(output=action.model_dump(mode="json"), usage_details={
+                    "input": self.last_usage.get("input_tokens", 0),
+                    "output": self.last_usage.get("output_tokens", 0),
+                    "total": self.last_usage.get("total_tokens", 0),
+                })
+            return action
 
     def close(self) -> None:
         self.client.close()

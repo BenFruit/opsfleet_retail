@@ -9,6 +9,7 @@ from retail_agent.data.query_service import QueryLimits, QueryService
 from retail_agent.llm.analyst import Analyst
 from retail_agent.llm.client import GeminiClient
 from retail_agent.observability.logging import configure_logging
+from retail_agent.observability.tracing import shutdown_tracing
 from retail_agent.schema.service import SchemaService
 from retail_agent.security.access import get_allowed_brands, load_brand_access
 
@@ -85,6 +86,7 @@ def main() -> int:
     except Exception:
         print("Startup failed. Check .env, access config, Google ADC, project access, and the README.")
     finally:
+        shutdown_tracing()
         if llm is not None:
             llm.close()
         if runner is not None:

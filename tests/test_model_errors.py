@@ -6,6 +6,7 @@ import httpx
 from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types
+from langsmith import tracing_context
 
 from retail_agent.agent.models import AgentAction
 from retail_agent.llm.client import ModelResponseError, _response_text, describe_model_error
@@ -28,12 +29,13 @@ class ModelErrorTests(unittest.TestCase):
             httpx_client=transport, retry_options=types.HttpRetryOptions(attempts=1),
         ))
         self.addCleanup(client.close)
-        response = client.models.generate_content(
-            model="offline-test-model", contents="hello",
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json", response_json_schema=AgentAction.model_json_schema(),
-            ),
-        )
+        with tracing_context(enabled=False):
+            response = client.models.generate_content(
+                model="offline-test-model", contents="hello",
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json", response_json_schema=AgentAction.model_json_schema(),
+                ),
+            )
         self.assertEqual(AgentAction.model_validate_json(_response_text(response)).action, "answer")
 
     def test_provider_failures_are_distinguishable_and_do_not_expose_raw_body(self):

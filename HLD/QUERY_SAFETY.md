@@ -101,8 +101,11 @@ arbitrary user input. This limitation remains explicit.
 
 Local JSON logs contain allowlisted IDs, counts, timings, token usage, stages and
 safe error codes. No SQL, prompts, raw rows, brand lists or exception bodies are
-logged. SQL in model observations is not exported to tracing. Implicit LangSmith
-tracing is disabled; Langfuse is not integrated yet.
+logged locally. Optional local Langfuse tracing is available (off by default),
+including graph state and Gemini I/O; implicit LangSmith export is disabled. Trace payloads are NOT
+comprehensively PII-sanitized. Use only demo/non-sensitive inputs when tracing is
+enabled. See [OBSERVABILITY_AND_ACCESS.md](OBSERVABILITY_AND_ACCESS.md) for the
+deferred production privacy work and unchanged prototype authorization decision.
 
 Offline tests cover both tools, the graph, row isolation, CTE/window/UNION paths,
 PII laundering attempts and small-group/NULL cases. Live smoke tests cover a

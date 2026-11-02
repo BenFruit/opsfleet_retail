@@ -10,6 +10,7 @@ from retail_agent.agent.models import AgentLimits, AgentState, TurnResult
 from retail_agent.data.query_service import QueryService, QueryServiceError
 from retail_agent.llm.analyst import Analyst
 from retail_agent.llm.client import describe_model_error
+from retail_agent.observability.tracing import get_callbacks
 from retail_agent.safety.result_guard import ResultGuardError, check_text, make_observation, remove_markdown_tables, render_observation
 from retail_agent.security.access import get_allowed_brands
 
@@ -42,7 +43,7 @@ class AnalyticalAgent:
         graph.add_conditional_edges("query", lambda state: "end" if state["answer"] else "plan", {
             "plan": "plan", "end": END,
         })
-        self.graph = graph.compile()  # No persistence/checkpointer or external callbacks.
+        self.graph = graph.compile()  # No persistence/checkpointer.
 
     def reset(self) -> None:
         self.history.clear()
@@ -68,12 +69,14 @@ class AnalyticalAgent:
         }
         started = monotonic()
         try:
-            # LangGraph can otherwise trace full state if LANGSMITH_TRACING is set.
-            # Disable implicit external tracing until a sanitized exporter exists.
+            # Langfuse is opt-in. Keep implicit LangSmith export disabled even
+            # when stale LANGSMITH_TRACING variables remain in the environment.
             with tracing_context(enabled=False):
                 result = self.graph.invoke(state, config={
                     "recursion_limit": 2 * self.limits.max_model_calls + 5,
-                    "callbacks": [],
+                    "run_name": "retail_question",
+                    "metadata": {"turn_id": state["turn_id"]},
+                    "callbacks": get_callbacks(),
                 })
         except Exception:
             logger.warning("agent_turn_failed", extra={"turn_id": state["turn_id"], "error_code": "graph_failed"})

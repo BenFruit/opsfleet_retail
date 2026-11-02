@@ -108,7 +108,8 @@ class GeminiClientTests(unittest.TestCase):
 
     def test_structured_action_system_instruction_and_usage(self):
         with patch("retail_agent.llm.client.load_dotenv"), patch.dict(os.environ, {"GEMINI_API_KEY": "fake", "GEMINI_MODEL": "env-model"}, clear=True), patch("retail_agent.llm.client.genai.Client") as sdk:
-            sdk.return_value.models.generate_content.return_value = SimpleNamespace(
+            generate = sdk.return_value.models.generate_content
+            generate.return_value = SimpleNamespace(
                 text='{"action": "answer", "answer": "Schema information"}',
                 usage_metadata=SimpleNamespace(prompt_token_count=10, candidates_token_count=5, total_token_count=15),
             )
@@ -116,7 +117,7 @@ class GeminiClientTests(unittest.TestCase):
             action = client.generate_structured("input", AgentAction, system_instruction="rules")
             self.assertEqual(action.action, "answer")
             self.assertEqual(client.last_usage["total_tokens"], 15)
-            config = sdk.return_value.models.generate_content.call_args.kwargs["config"]
+            config = generate.call_args.kwargs["config"]
             self.assertEqual(config.system_instruction, "rules")
             self.assertEqual(config.max_output_tokens, 4096)
             self.assertIsNone(config.response_schema)

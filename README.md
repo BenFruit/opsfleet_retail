@@ -4,7 +4,7 @@ A CLI analyst for `bigquery-public-data.thelook_ecommerce`, using the Gemini SDK
 a small LangGraph loop, and deterministic SQL validation/brand access controls.
 
 **Current milestone:** iterative analysis, follow-up questions, bounded query
-repair, a typed demographic tool, local metadata traces, and a CLI.
+repair, a typed demographic tool, optional local Langfuse tracing, local logs, and a CLI.
 Saved-report deletion is NOT implemented yet. This is not the complete assignment
 submission or a production security system.
 
@@ -112,9 +112,9 @@ flowchart TD
 
 LangGraph manages two nodes (`plan`, `query`). It does not grant permissions or
 make SQL safe. The Gemini SDK handles structured actions with Pydantic. We do not
-use LangChain agents or SQL toolkits. LangGraph brings `langchain-core` and
-LangSmith transitively; implicit LangSmith tracing is explicitly disabled during
-graph execution, even if enabled in the environment. Langfuse is not connected yet.
+use LangChain agents or SQL toolkits. Langfuse tracing is optional and explicitly
+enabled through `.env`; its LangChain callback traces the graph and explicit
+generation observations trace Gemini calls. Implicit LangSmith export stays disabled.
 
 There are two tools, not one universal SQL privacy engine:
 - **query:** general SQL for non-demographic analysis; SQLGlot resolves columns
@@ -139,7 +139,8 @@ QueryService defaults: 100 MB maximum billed bytes per query, 200 result rows,
 These controls are not a hard end-to-end deadline or an account-wide cost cap.
 Limits are defined in `AgentLimits` and `QueryLimits`.
 Dry-run failures do not spend the scan allowance: no execution was submitted.
-Safe repair feedback includes the previous model-authored SQL (not logged), and
+Safe repair feedback includes the previous model-authored SQL (not in local logs;
+visible in enabled Langfuse traces), and
 known date/time errors give fixed guidance rather than echoing backend messages.
 By default, "last month" means the previous complete calendar month compared to
 the month before it, not current month-to-date versus a full month.
@@ -189,7 +190,65 @@ the month before it, not current month-to-date versus a full month.
 `logs/agent.jsonl` contains JSON events with IDs, action/stage, durations, row/byte
 counts, token usage, and safe error codes. Prompts, SQL, identity, brand lists, raw
 rows and exception text are not included. Set `--log-file` to change the path.
-These are local events, not a full Langfuse deployment or monitoring dashboard.
+These local events are separate from the optional Langfuse dashboard.
+
+### Local Langfuse dashboard (optional)
+
+Install/start Docker Desktop (Linux containers). The root `docker-compose.yaml`
+runs Langfuse from ready-made images alongside its storage services; there is
+**no need to clone the Langfuse source repository**. Fixed demo credentials and
+the required encryption key are already in Compose. No `.env.langfuse` or manual
+secret generation is required. **Local MVP only, not production.** Only UI and
+media ports are exposed, both on loopback; databases stay internal.
+From this repository root:
+
+```powershell
+docker compose up -d
+docker compose ps
+```
+
+This starts several services, not just one container. Open
+<http://localhost:3000>, sign up locally (no default login), create an organization
+and project, and generate project API keys. No Langfuse Cloud account or LangSmith
+Enterprise license is needed. Add the LOCAL project's keys to this app's `.env`:
+
+```dotenv
+LANGFUSE_TRACING_ENABLED=true
+LANGFUSE_PUBLIC_KEY=pk-lf-your-local-project-key
+LANGFUSE_SECRET_KEY=sk-lf-your-local-project-key
+LANGFUSE_BASE_URL=http://localhost:3000
+```
+
+Run `uv sync`, restart the CLI, ask a question, then open **Tracing** in your local
+Langfuse project. Each `retail_question` run shows `plan`/`query` steps, their state
+updates and nested `Gemini` generations with input, validated actions and usage.
+The trace's `turn_id` matches local log events. Query failures handled by the
+agent appear as error observations, not necessarily red failed spans. BigQuery
+sub-stages are not individually instrumented yet. Events are batched in the
+background and flushed on normal CLI shutdown; allow a short delay in the UI.
+
+**Privacy warning:** tracing exports graph state and Gemini I/O, including
+questions, history, SQL, brand lists and observations. Comprehensive trace PII
+redaction is deferred; enable only with demo/non-sensitive inputs. Existing data
+guards remain enabled but do not sanitize every trace field. Set
+`LANGFUSE_TRACING_ENABLED=false` to disable export. Never commit the API keys.
+Local hosting does not remove the need for trace redaction and access control.
+
+Stop the local stack without deleting its data:
+
+```powershell
+docker compose down
+```
+
+Do not add `-v` unless you intend to delete stored traces and other volume data.
+The Python CLI still runs on the host with `uv run python main.py --manager manager_a`.
+The Compose file is adapted from the
+[upstream local deployment](https://langfuse.com/self-hosting/deployment/docker-compose);
+this is not a production/high-availability setup.
+
+Production trace privacy and brand-list scaling are explicitly deferred in
+[HLD/OBSERVABILITY_AND_ACCESS.md](HLD/OBSERVABILITY_AND_ACCESS.md). Authorization
+and the full brand list in model context remain unchanged in this iteration.
 
 ### Model failure diagnostics
 
