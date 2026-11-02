@@ -12,6 +12,8 @@ _FIELDS = (
     "error_type", "http_status", "retry_after_seconds", "validation_fields",
     "validation_error_count",
     "validation_reason",
+    "report_calls",
+    "persona_version",
 )
 
 

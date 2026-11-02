@@ -55,7 +55,7 @@ class AnalyticalAgentTests(unittest.TestCase):
         self.assertIn("| 30.00 |", turn.answer)
 
     def test_placeholder_after_failed_query_is_not_accepted_as_final_result(self):
-        self.analyst.decide.side_effect = [query(), answer("Let me run a query to get that list.")]
+        self.analyst.decide.side_effect = [query(), *[answer("Let me run a query to get that list.")] * 3]
         self.service.execute.side_effect = QueryServiceError("invalid_sql", "SQL rejected: unsupported construct")
         turn = self.agent.ask("Give me the top 10 brands")
         self.assertNotIn("Let me run", turn.answer)
@@ -145,12 +145,49 @@ class AnalyticalAgentTests(unittest.TestCase):
         self.assertIn("DATE_SUB", observation["message"])
         self.assertNotIn(bad_sql, repr(self.logger.mock_calls))
 
-    def test_two_consecutive_errors_stop_loop(self):
+    def test_initial_failure_and_two_repairs_stop_loop(self):
         self.analyst.decide.return_value = query()
         self.service.execute.side_effect = QueryServiceError("query_rejected", "Please revise the query.")
         turn = self.agent.ask("Revenue?")
-        self.assertEqual(turn.queries, 2)
+        self.assertEqual(turn.queries, 3)
         self.assertIn("stopped", turn.answer)
+
+    def test_two_sql_repairs_can_succeed_without_new_user_message(self):
+        self.analyst.decide.side_effect = [query(), query(), query(), answer()]
+        self.service.execute.side_effect = [
+            QueryServiceError("invalid_sql", "Fix grouping."),
+            QueryServiceError("query_rejected", "Fix DATE arithmetic.", stage="dry_run"),
+            result(),
+        ]
+        turn = self.agent.ask("Analyze revenue")
+        self.assertEqual(turn.queries, 3)
+        self.assertEqual(turn.model_calls, 4)
+        self.assertEqual(turn.scan_bytes_used, 10)
+        self.assertIn("Revenue is 30", turn.answer)
+
+    def test_two_invalid_action_repairs_before_any_tool_executes(self):
+        try:
+            AgentAction.model_validate_json('{"action":"SECRET"}')
+        except ValueError as error:
+            invalid = error
+        self.analyst.decide.side_effect = [invalid, invalid, query(), answer()]
+        turn = self.agent.ask("Analyze revenue")
+        self.assertEqual(turn.model_calls, 4)
+        self.service.execute.assert_called_once()
+        self.assertNotIn("SECRET", json.dumps(self.analyst.decide.call_args.kwargs) + turn.answer)
+        self.assertIn("Revenue is 30", turn.answer)
+
+    def test_premature_answer_after_bad_sql_gets_a_repair_chance(self):
+        self.analyst.decide.side_effect = [query(), answer("I cannot complete it."), query(), answer()]
+        self.service.execute.side_effect = [QueryServiceError("invalid_sql", "Fix the grouping."), result()]
+        turn = self.agent.ask("Analyze revenue")
+        self.assertEqual(turn.queries, 2)
+        self.assertIn("Revenue is 30", turn.answer)
+
+    def test_demographic_action_was_removed(self):
+        self.assertNotIn("demographic", AgentAction.model_json_schema()["properties"])
+        with self.assertRaises(ValueError):
+            AgentAction(action="demographic")
 
     def test_empty_result_can_trigger_new_query(self):
         self.analyst.decide.side_effect = [query(), query(), answer()]

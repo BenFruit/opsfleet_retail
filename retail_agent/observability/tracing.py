@@ -30,13 +30,19 @@ def get_callbacks() -> list:
         return []
 
 
-def trace_generation(model: str, prompt: str, system_instruction: str | None):
+def trace_generation(model: str, prompt: str, system_instruction: str | None, *, name: str = "Gemini"):
     if _client is None or os.getenv("LANGFUSE_TRACING_ENABLED", "false").lower() != "true":
         return nullcontext(None)
     return _client.start_as_current_observation(
-        as_type="generation", name="Gemini", model=model,
+        as_type="generation", name=name, model=model,
         input={"prompt": prompt, "system_instruction": system_instruction},
     )
+
+
+def trace_operation(name: str, inputs: dict):
+    if _client is None or os.getenv("LANGFUSE_TRACING_ENABLED", "false").lower() != "true":
+        return nullcontext(None)
+    return _client.start_as_current_observation(as_type="tool", name=name, input=inputs)
 
 
 def shutdown_tracing() -> None:

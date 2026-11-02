@@ -6,7 +6,7 @@ import re
 from datetime import date, datetime, time
 from decimal import Decimal
 
-from retail_agent.data.demographics import COHORT_COLUMN
+from retail_agent.safety.demographic_sql import COHORT_COLUMN
 from retail_agent.data.query_service import QueryResult
 from retail_agent.safety.sql_validator import SQLValidationError, validate_query
 

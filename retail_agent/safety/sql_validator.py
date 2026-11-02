@@ -1,8 +1,8 @@
-"""General SQL tool: read-only, known sources, no PII or demographic columns.
+"""One read-only SQL tool with column policies and restricted demographic shapes.
 
 SQLGlot resolves CTE/subquery/window scopes; we do not maintain a grammar
 allowlist. Unknown/UDF/external functions and source modifiers still fail closed.
-Demographics use the separate structured tool, not this SQL path.
+Demographic queries are checked structurally, not by a catalog of business tasks.
 """
 
 from sqlglot import exp, parse
@@ -12,6 +12,7 @@ from sqlglot.optimizer.scope import traverse_scope
 
 from retail_agent.schema.catalog import CATALOG_NAME, DB_NAME, TABLE_POLICIES
 from retail_agent.schema.models import DataAccessLevel
+from retail_agent.safety.demographic_sql import COHORT_COLUMN, validate_demographic_sql
 
 
 class SQLValidationError(ValueError):
@@ -51,13 +52,18 @@ def validate_query(sql: str):
                 raise SQLValidationError("Only ordinary physical table sources are allowed")
             if any(value for key, value in table.args.items() if key not in {"this", "db", "catalog", "alias"}):
                 raise SQLValidationError("Table source modifiers are not supported")
+            if table.args.get("alias") and table.args["alias"].args.get("columns"):
+                raise SQLValidationError("Physical table column-renaming aliases are not supported")
         schema = {CATALOG_NAME: {DB_NAME: {
             table: {column: "UNKNOWN" for column in policies}
             for table, policies in TABLE_POLICIES.items()
         }}}
         tree = qualify(tree, dialect="bigquery", schema=schema, expand_stars=False)
+        if any(item.alias_or_name.lower() == COHORT_COLUMN for select in tree.find_all(exp.Select) for item in select.expressions):
+            raise SQLValidationError("The cohort output name is reserved for trusted code")
         if len(tree.named_selects) != len(set(tree.named_selects)):
             raise SQLValidationError("Use unique output column aliases")
+        demographic = False
         for scope in traverse_scope(tree):
             for column in scope.columns:
                 owner = scope
@@ -73,9 +79,14 @@ def validate_query(sql: str):
                     if policy.access_level == DataAccessLevel.BLOCKED_PII:
                         raise SQLValidationError("PII column is forbidden")
                     if policy.access_level == DataAccessLevel.AGGREGATE_ONLY:
-                        raise SQLValidationError("Use the demographic tool for demographic filters or statistics")
+                        demographic = True
                     if source.name == "orders" and column.name == "num_of_item":
                         raise SQLValidationError("Count authorized order_items instead of whole-order num_of_item")
+        if demographic:
+            try:
+                tree.meta["demographic_subject"] = validate_demographic_sql(tree)
+            except ValueError as error:
+                raise SQLValidationError(str(error)) from None
         return tree
     except (ParseError, OptimizeError):
         raise SQLValidationError("SQL cannot be parsed or its columns are unknown/ambiguous") from None

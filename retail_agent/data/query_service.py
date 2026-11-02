@@ -11,7 +11,6 @@ from uuid import uuid4
 from google.api_core import exceptions as google_errors
 
 from retail_agent.data.bigquery_runner import BigQueryRunner
-from retail_agent.data.demographics import DemographicRequest, build_demographic_query
 from retail_agent.security.access import get_allowed_brands
 from retail_agent.security.query_scope import apply_brand_scope
 from retail_agent.safety.sql_validator import SQLValidationError, validate_query
@@ -73,8 +72,7 @@ class QueryService:
         self.limits = limits if limits is not None else QueryLimits()
 
     def execute(
-        self, sql: str | None, *, manager_id: str, scan_budget_bytes: int | None = None,
-        demographic: DemographicRequest | None = None,
+        self, sql: str, *, manager_id: str, scan_budget_bytes: int | None = None,
     ) -> QueryResult:
         """Use identity supplied by the application, never identity from the LLM.
 
@@ -98,23 +96,20 @@ class QueryService:
                 raise QueryServiceError("access_denied", "No authorized brands for this user.") from None
 
             stage = "validation"
-            if demographic is None and (not isinstance(sql, str) or len(sql) > self.limits.max_sql_chars):
+            if not isinstance(sql, str) or len(sql) > self.limits.max_sql_chars:
                 raise QueryServiceError("invalid_sql", "SQL is missing or exceeds the supported size.")
             try:
-                if demographic is not None:
-                    if sql:
-                        raise ValueError("Choose exactly one tool")
-                    scoped_sql, columns, context = build_demographic_query(demographic, self.limits.minimum_cohort_size)
-                else:
-                    tree = validate_query(sql)
-                    columns = tuple(tree.named_selects)
-                    context = {"tool": "sql", "executed_sql": tree.sql(dialect="bigquery")}
-                    scoped_sql = apply_brand_scope(sql)
+                tree = validate_query(sql)
+                demographic = bool(tree.meta.get("demographic_subject"))
+                columns = tuple(tree.named_selects)
+                context = {"tool": "sql", "executed_sql": tree.sql(dialect="bigquery")}
+                if demographic:
+                    context["demographic_policy"] = "Restricted aggregate SQL; AVG(age) is purchase-weighted with purchase joins. Group only at the requested grain; never invent re-binned totals from suppressed/truncated rows."
+                scoped_sql = apply_brand_scope(sql, minimum_cohort_size=self.limits.minimum_cohort_size)
             except SQLValidationError as error:
                 raise QueryServiceError("invalid_sql", f"SQL rejected: {error}") from None
             except (ValueError, RecursionError):
-                message = "Invalid demographic request; check dimensions, metrics, filters and ranges." if demographic is not None else "SQL is invalid or outside the supported safety policy."
-                raise QueryServiceError("invalid_sql", message) from None
+                raise QueryServiceError("invalid_sql", "SQL is invalid or outside the supported safety policy.") from None
 
             stage = "dry_run"
             estimated_bytes = self.runner.dry_run(
@@ -156,7 +151,7 @@ class QueryService:
                 query_id=query_id, rows=execution.rows, truncated=execution.truncated,
                 estimated_bytes=estimated_bytes, bytes_processed=execution.bytes_processed,
                 bytes_billed=execution.bytes_billed,
-                minimum_cohort_size=self.limits.minimum_cohort_size if demographic is not None else None,
+                minimum_cohort_size=self.limits.minimum_cohort_size if demographic else None,
                 columns=columns, query_context=context,
             )
             logger.info("query_completed", extra={
@@ -177,11 +172,6 @@ class QueryService:
             code, message = self._safe_backend_error(error)
             self._log_failure(query_id, stage, code, started)
             raise QueryServiceError(code, message, stage=stage) from None
-
-    def execute_demographic(
-        self, request: DemographicRequest, *, manager_id: str, scan_budget_bytes: int | None = None,
-    ) -> QueryResult:
-        return self.execute(None, demographic=request, manager_id=manager_id, scan_budget_bytes=scan_budget_bytes)
 
     @staticmethod
     def _log_failure(

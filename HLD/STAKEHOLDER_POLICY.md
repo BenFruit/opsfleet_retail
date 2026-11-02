@@ -31,8 +31,9 @@ already implemented; see implementation status below.
 
 - Direct PII source references are rejected; brand-scoped SQL execution exists.
 - Customer IDs and non-demographic financial analysis are supported.
-- A structured demographic tool generates aggregate SQL and enforces configurable
-  cohort suppression. Free-form SQL is for non-demographic analysis. The default
+- One SQL action supports ordinary queries and structurally checked demographic
+  aggregates, including computed groups. Code adds configurable cohort suppression.
+  The default
   is 5 distinct contributing buyers (CLI --min-cohort-size, minimum 2), not a
   client-mandated threshold. Ordinary product revenue is not suppressed.
   See QUERY_SAFETY.md for the current contract and archive/ for the old approach.

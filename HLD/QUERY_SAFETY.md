@@ -1,123 +1,123 @@
-# Current prototype: two analysis tools
+# Current prototype: unified SQL, structural safety and bounded repairs
 
 ## Decision
 
-Use general SQL for non-demographic analysis and a typed request for demographic
-analysis. Do not maintain a handwritten grammar/lineage engine for arbitrary
-model-authored demographic SQL. Historical source and rationale are preserved in
-[archive/sql-demographic-validator-v1.md](archive/sql-demographic-validator-v1.md).
-That archive is not a production-ready implementation or a full repository backup.
+Model actions are `query`, `report`, `answer`. The model writes SQL for BOTH
+ordinary and demographic analytics. The former typed `demographic` action and
+its dimensions/metric SQL builder were removed: they unnecessarily required code
+changes for new business groupings. Demographic policy still exists in the data
+layer; removing a tool does not remove privacy constraints.
 
-## 1. General SQL tool
+For example, five-year intervals use `FLOOR(u.age/5)*5` and `...+4` in GROUP BY.
+Ten-year intervals, CASE-based dimensions, rounding and ratios of approved
+aggregates do not need new request fields. The source snapshot of the earlier
+V1 validator remains in [archive/](archive/sql-demographic-validator-v1.md);
+it is historical reference, not current source or a production security proof.
 
-`safety/sql_validator.py` uses SQLGlot to parse/qualify one read-only query.
-CTEs, derived tables, correlated subqueries, window functions, set operations and
-recognized built-in functions can be used; there is no long AST-node allowlist.
+## Shared SQL boundary
 
-Checks remain:
-- known fully qualified physical tables in the permitted dataset;
-- deterministic column policies, including references inside CTEs/subqueries;
-- no direct PII and no demographic fields, even in WHERE: use tool 2 instead;
-- no DML/DDL, wildcard projections, custom parameters, external/UDF/unknown
-  functions, identity functions, or unreviewed physical-source modifiers;
-- no orders.num_of_item, which may include unauthorized brands.
+`safety/sql_validator.py` parses one read-only SELECT/set query, qualifies columns
+against the policy catalog using SQLGlot and rejects unknown sources, direct PII
+anywhere, DML/DDL, wildcard projections, external/UDF/identity functions, custom
+parameters and unsupported source modifiers. Aliases do not change column policy.
+`orders.num_of_item` is blocked because it can include unauthorized brands.
 
-SQLGlot resolves names; application code walks physical sources rather than
-mistaking CTE names for database tables. QueryScope replaces EVERY physical
-source with an authorized-brand relation. Source projections contain ALLOWED
-columns only, an additional barrier against PII/demographic access by this tool.
-Customers/orders are visible through authorized purchases; all item sources
-remain independently restricted. Whole-order status/timestamps are not redefined
-as brand-specific facts: prefer order_items for those metrics.
+`security/query_scope.py` replaces every physical source with an authorized-brand
+relation, including sources inside ordinary CTEs/subqueries. Only approved source
+columns are projected; aggregate-only columns are included only after demographic
+shape validation succeeds. Brand ARRAY parameters come from trusted identity,
+not model text. A visible customer does not unlock their other purchases.
 
-This is broader SELECT support, NOT a promise that arbitrary BigQuery syntax or
-functions are supported or production-safe. Results must be scalar tabular data.
-Join grain, business correctness and natural-language intent still need evaluation.
+## Demographic SQL: supported shape, not unrestricted SQL
 
-## 2. Structured demographic tool
+`safety/demographic_sql.py` applies when any source column is AGGREGATE_ONLY:
 
-`data/demographics.py` owns both the Pydantic contract and SQL generation:
+- One flat aggregate SELECT; no CTEs/subqueries/set operations/windows, grouping
+  sets/rollups or SELECT DISTINCT in this subset.
+- Exactly users + order_items, optionally products, each once, connected by
+  canonical INNER JOIN equality keys. Other filters belong in WHERE.
+- Grouping/filter expressions may reference demographic attributes, product
+  fields and approved purchase facts, not individual customer/order/item IDs.
+- Outputs must be grouped expressions or expressions over approved aggregates.
+  COUNT([DISTINCT] direct column), SUM/AVG/MIN/MAX of approved numeric inputs and
+  reviewed arithmetic are supported. Conditional/nested aggregates fail closed.
+- Identifier columns may be used for canonical joins and direct counts, never
+  to target/filter one individual inside a metric or expose their profile.
+- The internal cohort output name is reserved for trusted code.
 
-```json
-{
-  "group_by": ["state"],
-  "filters": {"age_from": 20, "age_to": 30, "brand": "Calvin Klein", "status": "Complete"},
-  "metrics": ["revenue", "customer_count"],
-  "order_by": "revenue",
-  "limit": 10
-}
-```
+The model chooses expressions and business intent; code enforces this structural
+subset. Complex rejected SQL is an implementation limitation, not necessarily a
+stakeholder prohibition. It must be explained honestly, not replaced with a
+different analysis while claiming success.
 
-Only named dimensions/metrics/filter fields are accepted. There is no raw SQL,
-user_id filter/output, arbitrary expression or model-controlled cohort counter.
-Literal values are escaped through SQLGlot. Brand entitlements are bound as
-BigQuery parameters from trusted startup identity, not from this request.
+## Contributor guard and result boundary
 
-The query joins purchase -> customer/product on fixed keys and applies brand,
-demographic, date and status filters. It first groups purchases by requested
-dimensions AND customer, then aggregates those per-customer rows. Consequently:
-- customer_count counts each buyer once per group;
-- average_age is over DISTINCT buyers, not weighted by repeated purchases;
-- revenue/profit and average sale price retain their purchase-level meaning;
-- product-name grouping also includes product_id to avoid merging namesakes.
+Trusted code adds COUNT(DISTINCT buyer) plus HAVING >= k BEFORE ORDER/LIMIT.
+The common contributor set requires non-null aggregate arguments AND their input
+columns. This prevents a large otherwise-null group publishing one known age.
+Counted buyers must belong to the actual canonically joined purchases.
+ResultGuard rechecks the service-owned counter, removes it, validates expected
+columns/scalar types/finite values and bounds the observation before Gemini.
 
-The private __cohort_size counts buyers with non-null inputs contributing to all
-requested metrics. A large otherwise-null group cannot publish one known age as
-an apparently safe average. HAVING applies the threshold BEFORE ranking/LIMIT.
-ResultGuard checks the counter again and removes it before LLM delivery.
+The default k=5 (CLI minimum 2) is a configurable prototype choice, not a client-
+mandated number. It applies to demographic queries only. Empty output can mean
+no data OR suppression; rankings include publishable groups only. Do not sum
+overlapping group buyer counts or reconstruct suppressed bins from partial rows.
 
-Default threshold: 5, configurable with --min-cohort-size (minimum 2). The number
-is our documented prototype choice, not a number mandated by Harry/Vlad. It
-applies to demographic results only; ordinary product revenue has no threshold.
-Empty demographic results mean no publishable rows, not necessarily zero buyers.
-Rankings cover publishable groups only. Group customer counts can overlap.
+AVG(users.age) over purchase joins is now PURCHASE-WEIGHTED. The former structured
+tool computed distinct-buyer means; that semantic difference is explicit in model
+instructions and observation context. No universal metric correctness is claimed.
 
-## Shared execution and result boundary
+## Two automatic repairs
 
-QueryService is the only agent execution path. Both tools use the same trusted
-brand mapping, parameter binding, dry run, maximum billed bytes, row/response
-bounds, timeout/cancellation and safe errors. Limits apply per query plus bounded
-per-turn attempts/model calls/scan accounting in the graph. The raw runner and
-its legacy unrestricted execute_query method are not model tools.
-Failures carry their execution stage: authorization/validation/dry-run failures
-consume attempts but no scan allowance. SQL repair observations include a bounded
-copy of the model's previous SQL plus controlled feedback, never raw backend
-exception bodies. In particular, calendar-month comparisons use DATE arithmetic,
-not unsupported TIMESTAMP_SUB(... MONTH).
+SQL validation/BigQuery rejection feedback includes controlled reasons and bounded
+previous SQL. Three consecutive SQL failures means initial attempt plus TWO
+automatic repair attempts in the SAME user turn. A premature final answer after
+failed SQL gets a bounded correction prompt rather than asking the user to retry.
+Malformed JSON/action responses get up to TWO corrections before any tool runs;
+raw invalid values/provider bodies are not echoed. All steps remain inside the
+7-model-call, 5-SQL-attempt and scan budgets. Authorization failures, unsafe
+results, ambiguous timeouts and unavailable/rate-limited services are not blindly
+replayed. Report writes/deletion are not automatically retried.
 
-Prepared output names and tool context belong to QueryService, not to model-
-provided assertions of safety. ResultGuard checks actual columns, scalar types,
-finite numbers, cohort metadata and observation size before any rows return to
-the model. General SQL observations include normalized submitted SQL (executed
-with brand scoping); demographic observations include actual structured filters.
-This replaces the former handwritten interpretation of SQL status predicates.
+Pre-execution authorization/validation/dry-run failures do not consume scan
+allowance. Executions with unknown billing conservatively reserve their ceiling.
+Per-query limits still apply (dry run, billed bytes, rows, response size, timeout).
+These controls are not an account-wide cost cap or end-to-end deadline.
 
-The CLI renders checked tables, not model-generated copies. Database-derived
-PII values cannot be authorized merely by renaming an output column. Supplemental
-email/phone text checks are NOT comprehensive detection of names/addresses in
-arbitrary user input. This limitation remains explicit.
+## Why basic aggregate checks are insufficient (examples)
 
-## Observability and status
+Blocked by this implementation:
+- `AVG(age) WHERE id=123`: an aggregate still reveals one person's age.
+- `SUM(CASE WHEN id=123 THEN age ELSE 0 END)` alongside a large COUNT: the group
+  count says nothing about who actually contributes to the sensitive metric.
+- `GROUP BY user_id`, encoded/renamed ID outputs and demographic-filtered ID
+  lists: column names/aggregate keywords do not establish anonymity.
+- Wrong/cross joins: unrelated buyers could inflate the counter.
 
-Local JSON logs contain allowlisted IDs, counts, timings, token usage, stages and
-safe error codes. No SQL, prompts, raw rows, brand lists or exception bodies are
-logged locally. Optional local Langfuse tracing is available (off by default),
-including graph state and Gemini I/O; implicit LangSmith export is disabled. Trace payloads are NOT
-comprehensively PII-sanitized. Use only demo/non-sensitive inputs when tracing is
-enabled. See [OBSERVABILITY_AND_ACCESS.md](OBSERVABILITY_AND_ACCESS.md) for the
-deferred production privacy work and unchanged prototype authorization decision.
+Residual limitations, NOT solved by k-suppression:
+- Two allowed aggregates over groups of 6 and 5 buyers can reveal the excluded
+  person's contribution by subtraction when the attacker knows the membership.
+  Vlad explicitly allowed cross-question inference protection to remain design-only.
+- Rare attributes, extreme statistics and external background knowledge can
+  enable attribute inference even when every published group passes k.
+- Query validity does not prove intended date boundaries, status filters, grain,
+  formulas or causal explanations. Models can still misdescribe correct tables.
+- Recognized SQLGlot functions and a reviewed subset are not a formal privacy
+  proof or support for every BigQuery construct. Generic free-text PII detection
+  is not solved by supplemental email/phone patterns.
 
-Offline tests cover both tools, the graph, row isolation, CTE/window/UNION paths,
-PII laundering attempts and small-group/NULL cases. Live smoke tests cover a
-CTE + ROUND revenue/profit query and a typed exact-age buyer count. They do not
-constitute a general correctness/security proof.
+## Production strengthening (NOT implemented)
 
-## Production HLD (not implemented)
+Use database-enforced identity-aware access/safe views and least-privilege accounts;
+govern/version metric definitions and grain; evaluate source/contributor lineage
+with adversarial tests. Consider privacy-aware query/composition budgets,
+consistent suppression, differential privacy where appropriate, and restrictions
+on externally identifying combinations. Broader demographic SQL requires stronger
+lineage/contributor analysis, not simply deleting checks. A semantic layer or
+privacy-aware execution engine may be preferable to a handwritten general parser.
 
-Use actual identity, database-enforced brand permissions/safe views, least-
-privilege service accounts, a governed/versioned metric layer, external safe
-observability, regression evaluations and operational budgets. Keep or extend
-the two-tool boundary when it makes enforcement simpler. Do not assume arbitrary
-demographic SQL is a production requirement. Document cross-question inference
-and mitigation in production; Vlad explicitly excluded its implementation from
-the prototype. k-suppression is not a formal privacy guarantee.
+Add intent/factual/UX evaluation and safe observability. Langfuse is opt-in;
+comprehensive trace redaction remains deferred in OBSERVABILITY_AND_ACCESS.md.
+REQUEST_SAFETY_CLASSIFIER.md describes the proposed teacher-labeled/distilled
+input classifier, which supplements rather than replaces deterministic controls.

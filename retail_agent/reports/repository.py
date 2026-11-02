@@ -1,0 +1,87 @@
+"""Only parameterized library operations; this is NOT an LLM SQL tool."""
+
+import os
+from contextlib import contextmanager
+
+import psycopg
+from psycopg.rows import dict_row
+
+from retail_agent.reports.embeddings import vector_literal
+from retail_agent.reports.models import ReportError, ReportRequest
+
+
+_ACCESS = "owner_id = %s AND brand_scope <@ %s::text[] AND cardinality(brand_scope) > 0"
+_SUMMARY = "report_id, title, conversation_id, created_at"
+
+
+class ReportRepository:
+    @contextmanager
+    def connection(self):
+        try:
+            with psycopg.connect(
+                host=os.getenv("REPORTS_POSTGRES_HOST", "127.0.0.1"),
+                port=int(os.getenv("REPORTS_POSTGRES_PORT", "5433")),
+                dbname=os.getenv("REPORTS_POSTGRES_DATABASE", "retail_agent"),
+                user=os.getenv("REPORTS_POSTGRES_USER", "retail_agent"),
+                password=os.getenv("REPORTS_POSTGRES_PASSWORD", "local-reports-demo"),
+                connect_timeout=3, options="-c statement_timeout=5000 -c timezone=UTC",
+                row_factory=dict_row,
+            ) as conn:
+                yield conn
+        except (psycopg.Error, ValueError):
+            raise ReportError("Report storage is unavailable or an operation failed. No success is confirmed; check the library before retrying a write.") from None
+
+    def save(self, *, report_id, owner, brands, conversation_id, title, content, vector, model):
+        with self.connection() as conn:
+            conn.execute(
+                "INSERT INTO saved_reports (report_id, owner_id, conversation_id, title, content, embedding, embedding_model, brand_scope) "
+                "VALUES (%s, %s, %s, %s, %s, %s::vector, %s, %s)",
+                (report_id, owner, conversation_id, title, content, vector_literal(vector), model, brands),
+            )
+
+    def search(self, *, owner, brands, query, vector, model):
+        with self.connection() as conn:
+            return conn.execute(
+                f"SELECT {_SUMMARY}, content, 1 - (embedding <=> %s::vector) AS similarity FROM saved_reports "
+                f"WHERE {_ACCESS} AND embedding_model = %s AND embedding IS NOT NULL "
+                "ORDER BY (strpos(lower(title || ' ' || content), lower(%s)) > 0) DESC, "
+                "embedding <=> %s::vector, report_id LIMIT 10",
+                (vector_literal(vector), owner, brands, model, query, vector_literal(vector)),
+            ).fetchall()
+
+    def list(self, *, owner, brands):
+        with self.connection() as conn:
+            return conn.execute(
+                f"SELECT {_SUMMARY} FROM saved_reports WHERE {_ACCESS} ORDER BY created_at DESC, report_id LIMIT 20",
+                (owner, brands),
+            ).fetchall()
+
+    def open(self, report_id, *, owner, brands):
+        with self.connection() as conn:
+            return conn.execute(
+                f"SELECT {_SUMMARY}, content FROM saved_reports WHERE {_ACCESS} AND report_id = %s",
+                (owner, brands, report_id),
+            ).fetchone()
+
+    def preview_delete(self, request: ReportRequest, *, owner, brands, conversation_id):
+        clause, values = "", []
+        if request.scope == "matching":
+            clause, values = " AND strpos(lower(title || ' ' || content), lower(%s)) > 0", [request.query]
+        elif request.scope == "conversation":
+            clause, values = " AND conversation_id = %s", [conversation_id]
+        elif request.scope == "id":
+            clause, values = " AND report_id = %s", [request.report_id]
+        with self.connection() as conn:
+            # Fail rather than silently preview/delete a partial match set.
+            return conn.execute(
+                f"SELECT {_SUMMARY} FROM saved_reports WHERE {_ACCESS}{clause} ORDER BY report_id LIMIT 101",
+                (owner, brands, *values),
+            ).fetchall()
+
+    def delete(self, ids: tuple[str, ...], *, owner, brands):
+        with self.connection() as conn:
+            rows = conn.execute(
+                f"DELETE FROM saved_reports WHERE {_ACCESS} AND report_id = ANY(%s::text[]) RETURNING report_id",
+                (owner, brands, list(ids)),
+            ).fetchall()
+            return len(rows)

@@ -4,7 +4,8 @@
 
 > Later implementation updates: see `README.md`, `HLD/QUERY_SAFETY.md`, and
 > `HLD/STAKEHOLDER_POLICY.md`. The source now includes a LangGraph CLI loop,
-> bounded QueryService, brand-scoped execution, and a typed demographic tool.
+> bounded QueryService, brand-scoped execution, and unified SQL with structural
+> demographic aggregate checks. The typed demographic tool was subsequently removed.
 > The previous free-form demographic SQL validator is documented in `HLD/archive/`.
 > The historical module-status/next-step sections below are outdated.
 

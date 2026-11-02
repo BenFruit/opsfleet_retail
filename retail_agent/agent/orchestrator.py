@@ -10,7 +10,9 @@ from retail_agent.agent.models import AgentLimits, AgentState, TurnResult
 from retail_agent.data.query_service import QueryService, QueryServiceError
 from retail_agent.llm.analyst import Analyst
 from retail_agent.llm.client import describe_model_error
-from retail_agent.observability.tracing import get_callbacks
+from retail_agent.observability.tracing import get_callbacks, trace_operation
+from retail_agent.reports.models import ReportError
+from retail_agent.reports.service import render_reports
 from retail_agent.safety.result_guard import ResultGuardError, check_text, make_observation, remove_markdown_tables, render_observation
 from retail_agent.security.access import get_allowed_brands
 
@@ -24,6 +26,7 @@ class AnalyticalAgent:
     def __init__(
         self, analyst: Analyst, query_service: QueryService, *, manager_id: str,
         limits: AgentLimits | None = None,
+        reports=None,
     ):
         self.allowed_brands = sorted(get_allowed_brands(manager_id))
         self.authorized_brand_count = len(self.allowed_brands)
@@ -34,23 +37,58 @@ class AnalyticalAgent:
         self.history: list[dict] = []
         self.first_question: str | None = None
         self.history_truncated = False
+        self.reports = reports
+        self.conversation_id = uuid4().hex
+        self.last_answer: str | None = None
+        self.last_answer_brands: list[str] = []
 
         graph = StateGraph(AgentState)
         graph.add_node("plan", self._plan)
         graph.add_node("query", self._query)
+        graph.add_node("reports", self._reports)
         graph.add_edge(START, "plan")
-        graph.add_conditional_edges("plan", self._after_plan, {"query": "query", "end": END})
+        graph.add_conditional_edges("plan", self._after_plan, {"query": "query", "reports": "reports", "plan": "plan", "end": END})
+        graph.add_conditional_edges("reports", lambda state: "end" if state["answer"] else "plan", {
+            "plan": "plan", "end": END,
+        })
         graph.add_conditional_edges("query", lambda state: "end" if state["answer"] else "plan", {
             "plan": "plan", "end": END,
         })
         self.graph = graph.compile()  # No persistence/checkpointer.
 
     def reset(self) -> None:
+        if self.reports is not None:
+            self.reports.cancel()
+        self.conversation_id = uuid4().hex
+        self.last_answer = None
+        self.last_answer_brands = []
         self.history.clear()
         self.first_question = None
         self.history_truncated = False
 
     def ask(self, question: str) -> TurnResult:
+        # Never let an LLM turn its own answer or a phrase like "yes" into
+        # destructive authorization. These exact CLI commands bypass the model.
+        if isinstance(question, str):
+            command = question.strip().lower()
+            if command in {"/confirm", "/cancel"}:
+                with trace_operation("report_confirmation", {"command": command, "conversation_id": self.conversation_id}) as span:
+                    try:
+                        if self.reports is None:
+                            text = "Report library is not configured."
+                        elif command == "/cancel":
+                            self.reports.cancel()
+                            text = "Deletion cancelled."
+                        else:
+                            text = self.reports.confirm()
+                    except (ReportError, PermissionError):
+                        text = "Deletion could not be confirmed. Check the library and request a new preview."
+                    if span is not None:
+                        span.update(output={"message": text})
+                logger.info("agent_report_confirmation", extra={"action": command})
+                return TurnResult(text, 0, 0, 0)
+            if self.reports is not None:
+                self.reports.cancel()
         if not isinstance(question, str) or not question.strip():
             return TurnResult("Please enter an analysis question.", 0, 0, 0)
         if len(question) > self.limits.max_input_chars:
@@ -63,12 +101,15 @@ class AnalyticalAgent:
             self.first_question = question
 
         state: AgentState = {
+            "action_retries": 0,
+            "report_calls": 0,
             "question": question, "history": list(self.history), "observations": [],
             "action": None, "answer": "", "queries": 0, "model_calls": 0,
             "consecutive_errors": 0, "scan_bytes_used": 0, "turn_id": uuid4().hex,
         }
         started = monotonic()
         try:
+            self.analyst.refresh_persona()
             # Langfuse is opt-in. Keep implicit LangSmith export disabled even
             # when stale LANGSMITH_TRACING variables remain in the environment.
             with tracing_context(enabled=False):
@@ -86,6 +127,11 @@ class AnalyticalAgent:
             "question": question, "answer": result["answer"][:8000],
             "observations": result["observations"][-2:],
         }
+        if not result["report_calls"] and result["action"] is not None and result["action"].action == "answer":
+            query_errors = [item for item in result["observations"] if item["status"] == "error" and item.get("code") not in {"model_invalid_action", "model_invalid_json"}]
+            if not query_errors or any(item["status"] == "ok" for item in result["observations"]):
+                self.last_answer = result["answer"]
+                self.last_answer_brands = list(self.allowed_brands)
         while turn["observations"] and len(json.dumps(turn, ensure_ascii=False)) > self.limits.max_history_chars:
             turn["observations"].pop(0)
         self.history.append(turn)
@@ -99,6 +145,7 @@ class AnalyticalAgent:
             "turn_id": state["turn_id"], "query_count": result["queries"],
             "model_calls": result["model_calls"], "scan_bytes_used": result["scan_bytes_used"],
             "duration_ms": round((monotonic() - started) * 1000),
+            "report_calls": result["report_calls"],
         })
         return TurnResult(result["answer"], result["queries"], result["model_calls"], result["scan_bytes_used"])
 
@@ -112,10 +159,13 @@ class AnalyticalAgent:
                 observations=state["observations"],
                 access_context={"authorized_brands": self.allowed_brands},
                 session_context={
+                    "reports_available": self.reports is not None,
+                    "has_answer_to_save": self.last_answer is not None,
                     "first_question": self.first_question,
                     "history_truncated": self.history_truncated,
                 },
                 budget={
+                    "report_calls": self.limits.max_report_calls - state["report_calls"],
                     "sql_attempts": self.limits.max_queries - state["queries"],
                     "scan_bytes": max(0, self.limits.max_scan_bytes - state["scan_bytes_used"]),
                 },
@@ -139,6 +189,15 @@ class AnalyticalAgent:
                 "turn_id": state["turn_id"], "error_code": code,
                 "duration_ms": round((monotonic() - started) * 1000), **metadata,
             })
+            if code in {"model_invalid_action", "model_invalid_json"} and state["action_retries"] < self.limits.max_action_retries:
+                return {
+                    "action": None, "model_calls": state["model_calls"] + 1,
+                    "action_retries": state["action_retries"] + 1,
+                    "observations": [*state["observations"], {
+                        "status": "error", "code": code,
+                        "message": "Your previous response was rejected before its proposed action executed. Earlier successful tool results remain valid; do not repeat successful writes. Return a corrected JSON action: query with SQL only, report with a valid request only (query is required, use empty string when not searching), or answer with text only. Never use a demographic action. Do not claim the rejected action succeeded.",
+                    }],
+                }
             return {
                 "model_calls": state["model_calls"] + 1,
                 "answer": self._partial(state, f"[{code}] {message}"),
@@ -146,7 +205,15 @@ class AnalyticalAgent:
         update = {"action": action, "model_calls": state["model_calls"] + 1}
         if action.action == "answer":
             checked = [item for item in state["observations"] if item["status"] in {"ok", "empty"}]
-            if state["observations"] and not checked:
+            report_results = [item for item in state["observations"] if item["status"] == "report"]
+            query_failures = [item for item in state["observations"] if item["status"] == "error" and item.get("code") not in {"model_invalid_action", "model_invalid_json"}]
+            if query_failures and not checked and not report_results:
+                # A premature final answer is not a replacement for repairing
+                # the failed SQL. Use the two bounded repair opportunities.
+                if state["consecutive_errors"] < self.limits.max_consecutive_errors and state["action_retries"] < self.limits.max_action_retries and state["queries"] < self.limits.max_queries:
+                    return {**update, "action": None, "action_retries": state["action_retries"] + 1,
+                            "observations": [*state["observations"], {"status": "error", "code": "repair_required",
+                            "message": "No SQL completed successfully. Repair the previous attempted SQL now using query, unless the request is prohibited; in that case explain the safety restriction. Never substitute a different grouping or invent totals."}]}
                 # An answer following only failures cannot pretend to deliver
                 # fresh results (including "I will fetch it" placeholder answers).
                 update["answer"] = self._partial(state, "No new query completed successfully.")
@@ -161,13 +228,54 @@ class AnalyticalAgent:
                             for index, item in enumerate(checked, start=1)
                         )
                     )
+                if report_results:
+                    update["answer"] += "\n\nReport sources:\n" + "\n".join(
+                        render_reports(item) for item in report_results if item["operation"] in {"search", "list"}
+                    )
+        elif action.action == "report":
+            if state["report_calls"] >= self.limits.max_report_calls:
+                update["answer"] = "The report-tool budget was exhausted."
         elif state["queries"] >= self.limits.max_queries or state["scan_bytes_used"] >= self.limits.max_scan_bytes:
             update["answer"] = self._partial(state, "The query budget was exhausted.")
         return update
 
     @staticmethod
     def _after_plan(state: AgentState) -> str:
-        return "end" if state["answer"] else "query"
+        if state["answer"]:
+            return "end"
+        if state["action"] is None:
+            return "plan"
+        return "reports" if state["action"].action == "report" else "query"
+
+    def _reports(self, state: AgentState) -> dict:
+        request = state["action"].report
+        update = {"report_calls": state["report_calls"] + 1}
+        status = "ok"
+        try:
+            if self.reports is None:
+                raise ReportError("Report library is not configured.")
+            # Save only the previous completed response, never a model-provided
+            # replacement or an in-progress answer from this invocation.
+            observation = self.reports.execute(
+                request, conversation_id=self.conversation_id,
+                last_answer=self.last_answer, last_brands=self.last_answer_brands,
+            )
+            if request.operation in {"save", "open", "list", "prepare_delete"} or not observation.get("reports"):
+                update["answer"] = render_reports(observation)
+            else:
+                update["observations"] = [*state["observations"], observation]
+        except (ReportError, ResultGuardError, PermissionError) as error:
+            status = "error"
+            # ResultGuard errors contain controlled messages, never raw rows.
+            update["answer"] = str(error) if not isinstance(error, PermissionError) else "No report access."
+        except Exception:
+            status = "error"
+            update["answer"] = "Report operation failed. No success is confirmed; check the library before retrying."
+        logger.info("agent_report_completed", extra={
+            "turn_id": state["turn_id"], "action": request.operation,
+            "status": status,
+        })
+        return update
 
     def _query(self, state: AgentState) -> dict:
         action = state["action"]
@@ -177,10 +285,7 @@ class AnalyticalAgent:
         reserved = min(remaining, self.query_service.limits.maximum_bytes_billed)
         spent = reserved
         try:
-            if action.action == "demographic":
-                result = self.query_service.execute_demographic(action.demographic, manager_id=self.manager_id, scan_budget_bytes=remaining)
-            else:
-                result = self.query_service.execute(action.sql, manager_id=self.manager_id, scan_budget_bytes=remaining)
+            result = self.query_service.execute(action.sql, manager_id=self.manager_id, scan_budget_bytes=remaining)
             spent = max(result.estimated_bytes, result.bytes_billed or 0, result.bytes_processed or 0)
             observation = make_observation(action.sql, result, max_chars=self.limits.max_observation_chars)
             errors = 0
@@ -222,7 +327,7 @@ class AnalyticalAgent:
     def _partial(state: AgentState, reason: str) -> str:
         successes = [item for item in state["observations"] if item["status"] == "ok"]
         text = f"I could not fully complete the analysis. {reason}"
-        failures = [item for item in state["observations"] if item["status"] == "error"]
+        failures = [item for item in state["observations"] if item["status"] == "error" and item.get("code") != "repair_required"]
         if failures:
             last = failures[-1]
             text += f"\nLast query issue: [{last['code']}] {last['message']}"

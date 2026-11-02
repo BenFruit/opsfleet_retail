@@ -1,10 +1,31 @@
-# Local Langfuse only. The retail CLI still runs on the host with uv.
+# Local Langfuse + separate PostgreSQL for Saved Reports. CLI runs on the host.
 # Based on https://github.com/langfuse/langfuse/blob/main/docker-compose.yml
 # Start: docker compose up -d
 # Fixed DEMO secrets below are for localhost development only, NOT production.
 name: opsfleet-observability
 
 services:
+  reports-postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: local-reports-admin-demo
+      POSTGRES_DB: retail_agent
+      TZ: UTC
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - reports_postgres_data:/var/lib/postgresql/data
+      - ./docker/reports-postgres/001_saved_reports.sql:/docker-entrypoint-initdb.d/001_saved_reports.sql:ro
+      - ./docker/reports-postgres/002_vectors.sql:/docker-entrypoint-initdb.d/002_vectors.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "PGPASSWORD=local-reports-demo psql -h 127.0.0.1 -U retail_agent -d retail_agent -c 'SELECT 1 FROM saved_reports LIMIT 0' >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
   langfuse-web:
     image: docker.langfuse.com/langfuse/langfuse:4
     restart: unless-stopped
@@ -125,6 +146,7 @@ services:
       retries: 20
 
 volumes:
+  reports_postgres_data:
   postgres_data:
   clickhouse_data:
   clickhouse_logs:

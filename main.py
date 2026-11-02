@@ -10,12 +10,15 @@ from retail_agent.llm.analyst import Analyst
 from retail_agent.llm.client import GeminiClient
 from retail_agent.observability.logging import configure_logging
 from retail_agent.observability.tracing import shutdown_tracing
+from retail_agent.reports.embeddings import ReportEmbedder
+from retail_agent.reports.repository import ReportRepository
+from retail_agent.reports.service import ReportLibrary
 from retail_agent.schema.service import SchemaService
 from retail_agent.security.access import get_allowed_brands, load_brand_access
 
 
 def run_chat(agent: AnalyticalAgent) -> None:
-    print("Retail analyst. Commands: /exit, /reset, /help")
+    print("Retail analyst. Commands: /exit, /reset, /help, /confirm, /cancel")
     print("Demo identity is fixed at startup. Do not enter personal contact details.")
     while True:
         try:
@@ -28,8 +31,9 @@ def run_chat(agent: AnalyticalAgent) -> None:
                 continue
             if question.lower() == "/help":
                 print("Ask about products, customer spending by ID, or sales over time.")
-                print("Demographics support restricted grouped analysis; small cohorts are suppressed.")
-                print("Saved reports are not implemented yet.")
+                print("Demographics use aggregate SQL with computed groups; small cohorts are suppressed.")
+                print("Ask to save the last answer, find/list/open your reports, or preview deletion.")
+                print("Deletion requires a separate /confirm; /cancel or any new question cancels it.")
                 continue
             if not question:
                 continue
@@ -76,6 +80,7 @@ def main() -> int:
             Analyst(llm, schema),
             QueryService(runner, QueryLimits(minimum_cohort_size=args.min_cohort_size)),
             manager_id=args.manager,
+            reports=ReportLibrary(ReportRepository(), ReportEmbedder(llm), manager_id=args.manager),
         )
         run_chat(agent)
         return 0

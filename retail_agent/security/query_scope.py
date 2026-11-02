@@ -11,6 +11,7 @@ from sqlglot import exp, parse_one
 from retail_agent.safety.sql_validator import physical_tables, validate_query
 from retail_agent.schema.catalog import CATALOG_NAME, DB_NAME, TABLE_POLICIES
 from retail_agent.schema.models import DataAccessLevel
+from retail_agent.safety.demographic_sql import add_cohort_guard
 
 
 def _table_path(name: str) -> str:
@@ -18,11 +19,11 @@ def _table_path(name: str) -> str:
     return f"`{CATALOG_NAME}.{DB_NAME}.{name}`"
 
 
-def _scoped_source(table_name: str) -> exp.Select:
+def _scoped_source(table_name: str, *, demographics: bool = False) -> exp.Select:
     columns = ", ".join(
         f"r.`{name}`"
         for name, policy in TABLE_POLICIES[table_name].items()
-        if policy.access_level == DataAccessLevel.ALLOWED
+        if (policy.access_level == DataAccessLevel.ALLOWED or demographics and policy.access_level == DataAccessLevel.AGGREGATE_ONLY)
         and not (table_name == "orders" and name == "num_of_item")
     )
 
@@ -49,16 +50,18 @@ def _scoped_source(table_name: str) -> exp.Select:
     )
 
 
-def apply_brand_scope(sql: str) -> str:
+def apply_brand_scope(sql: str, *, minimum_cohort_size: int = 5) -> str:
     """Validate SQL and scope physical sources, including those inside CTEs."""
     tree = validate_query(sql)
+    demographics = bool(tree.meta.get("demographic_subject"))
+    add_cohort_guard(tree, minimum_cohort_size)
 
     # Snapshot BEFORE replacement: never recursively rewrite our own guards.
     original_tables = list(physical_tables(tree))
     for table in original_tables:
         alias = table.args.get("alias")
         replacement = exp.Subquery(
-            this=_scoped_source(table.name),
+            this=_scoped_source(table.name, demographics=demographics),
             alias=alias.copy() if alias is not None else exp.TableAlias(
                 this=exp.to_identifier(table.name, quoted=True)
             ),

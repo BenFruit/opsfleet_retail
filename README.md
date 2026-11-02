@@ -4,9 +4,9 @@ A CLI analyst for `bigquery-public-data.thelook_ecommerce`, using the Gemini SDK
 a small LangGraph loop, and deterministic SQL validation/brand access controls.
 
 **Current milestone:** iterative analysis, follow-up questions, bounded query
-repair, a typed demographic tool, optional local Langfuse tracing, local logs, and a CLI.
-Saved-report deletion is NOT implemented yet. This is not the complete assignment
-submission or a production security system.
+repair, unified analytical SQL (including checked demographic aggregates), saved reports with vector search and explicit
+deletion confirmation, optional local Langfuse tracing, local logs, and a CLI.
+This is not a production security system; the production HLD remains separate.
 
 ## Setup (Windows PowerShell)
 
@@ -90,19 +90,36 @@ Which states buy Calvin Klein the most? Show completed revenue.
 Create a short report with findings, limitations, and recommended actions.
 ```
 
-Reports here are generated text, not saved library objects yet.
+To persist a report, first obtain an answer, then explicitly ask to save it:
 
-Commands: `/help`, `/reset`, `/exit`. History is bounded, held only in memory,
-and removed on reset/exit. Do not enter personal contact details in the chat.
+```text
+Save your last answer as a report titled October brand overview.
+List my saved reports.
+Find my reports related to Calvin Klein revenue.
+Open report <32-character-report-ID>.
+Delete my reports mentioning October brand overview.
+/confirm
+```
+
+Saving copies the last completed assistant analysis/answer, including app-rendered
+checked tables, not the whole conversation. Report-tool responses do not replace
+that snapshot. No fresh SQL is run for saving. Creating AND saving a new analysis
+in one request is deliberately two turns in this MVP: analysis first, save next.
+There is no autosave. The saved library survives process restarts.
+
+Commands: `/help`, `/reset`, `/exit`, `/confirm`, `/cancel`. History is bounded,
+held only in memory, and removed on reset/exit. Reset also changes conversation ID,
+clears the last-answer snapshot and pending deletion, but never deletes reports.
+Do not enter personal contact details in the chat.
 
 ## How the analytical loop works
 
 ```mermaid
 flowchart TD
     U[CLI question + fixed demo identity] --> P[Gemini: query or answer]
-    P -->|query| Q[QueryService: validate, brand scope, dry run, execute]
-    P -->|demographic request| D[Trusted SQL builder + cohort threshold]
-    D --> Q
+    P -->|query| V[Validate sources, columns and demographic aggregate shape]
+    V --> S[Brand scope + trusted cohort guard where needed]
+    S --> Q[BigQuery dry run + capped execution]
     Q --> G[Result guard: schema match, scalar conversion, bounds]
     G --> O[Checked observation or safe error]
     O -->|budget remains| P
@@ -110,24 +127,25 @@ flowchart TD
     O -->|failure/budget stop| F[Honest partial response]
 ```
 
-LangGraph manages two nodes (`plan`, `query`). It does not grant permissions or
+LangGraph manages three nodes (`plan`, `query`, `reports`). It does not grant permissions or
 make SQL safe. The Gemini SDK handles structured actions with Pydantic. We do not
 use LangChain agents or SQL toolkits. Langfuse tracing is optional and explicitly
 enabled through `.env`; its LangChain callback traces the graph and explicit
 generation observations trace Gemini calls. Implicit LangSmith export stays disabled.
 
-There are two tools, not one universal SQL privacy engine:
-- **query:** general SQL for non-demographic analysis; SQLGlot resolves columns
-  through CTEs, subqueries and windows, while code enforces source/column policies.
-- **demographic:** a typed request (dimensions, filters, metrics). Code builds the
-  SQL, joins, brand restriction and cohort check. The model does not write this SQL.
+There is one analytics action, **query**: the model writes SQL for ordinary and
+demographic analysis. SQLGlot resolves source columns and code applies different
+checks when aggregate-only fields are used. There is no `demographic` action or
+business-specific bucket parameter. For example, `FLOOR(u.age/5)*5 AS age_from`
+and `FLOOR(u.age/5)*5+4 AS age_to` express five-year groups directly in SQL.
+Rounded aggregates and ratios of approved aggregates use the same validation.
+Report operations remain a separate typed `report` action.
 
-For example, age 24 is `filters: {"age_from": 24, "age_to": 24}` with
-`metrics: ["customer_count"]`. State revenue uses `group_by: ["state"]`,
-`metrics: ["revenue", "customer_count"]`, and `order_by: "revenue"`.
-
-Each question allows at most 5 SQL attempts, 7 model calls, 2 consecutive query
-errors, and 300 MB of scan/billing budget accounting. The model is told the
+Each question allows at most 5 SQL attempts, 7 model calls, 3 consecutive query
+failures (initial attempt + TWO automatic repair attempts), and 300 MB of scan/billing
+budget accounting. Invalid JSON/action responses also get up to TWO correction
+attempts before any tool executes. All repairs share the model-call budget.
+Report writes and ambiguous executions are NOT blindly replayed. The model is told the
 remaining query budget and can answer without another query. Ambiguous timeouts
 are not automatically replayed. An execution failure with unknown billing
 conservatively consumes the reserved per-query ceiling. Confirmed pre-execution
@@ -135,7 +153,7 @@ validation/cost denials do not consume that scan allowance.
 
 QueryService defaults: 100 MB maximum billed bytes per query, 200 result rows,
 256 KB result JSON, 30-second query wait, 10-second API timeout. Gemini has a
-30-second HTTP timeout, no automatic retries, and a 4,096 output-token cap.
+30-second HTTP timeout, no automatic transport retries, and a 4,096 output-token cap.
 These controls are not a hard end-to-end deadline or an account-wide cost cap.
 Limits are defined in `AgentLimits` and `QueryLimits`.
 Dry-run failures do not spend the scan allowance: no execution was submitted.
@@ -159,17 +177,17 @@ the month before it, not current month-to-date versus a full month.
   are supported for ordinary SQL. Unknown/UDF/external functions, identity
   functions, custom parameters and unreviewed source modifiers remain rejected.
   This is not a promise to support every BigQuery feature or result type.
-- Demographic fields cannot be used in the SQL tool, even in filters or CTEs.
-  Use the demographic tool instead: it has named dimensions, metrics and filters,
-  no raw expressions or customer-ID fields. This is an enforcement boundary, not
-  a claim that demographics are prohibited by client policy.
-- The demographic builder first aggregates purchases per buyer/group, then
-  produces the requested statistics. Average age is over distinct buyers, not
-  weighted by repeated purchases. A private contributing-buyer counter and HAVING
-  enforce the threshold BEFORE ORDER/LIMIT. Non-null inputs are checked across
-  metrics; one known age cannot masquerade as an average over a large null group.
-  ResultGuard checks again and removes the counter before the LLM. Empty results
-  mean no publishable data, not proof of zero buyers. Rankings cover published groups.
+- SQL using demographic columns requires a flat aggregate SELECT with canonical
+  INNER JOINs from purchases to users, optionally products. Computed grouped
+  expressions are supported. Individual IDs in output/grouping/filters, noncanonical
+  joins, demographic CTEs/subqueries/windows/set operations and conditional/nested
+  aggregates fail closed. COUNT, SUM, AVG, MIN, MAX are supported with checked inputs.
+- Trusted code adds a private DISTINCT contributing-buyer counter and HAVING
+  BEFORE ORDER/LIMIT. Both aggregate expressions and their inputs must be non-null
+  for the common contributor set. ResultGuard checks again and strips the counter.
+  AVG(age) over purchase joins is PURCHASE-WEIGHTED, unlike the former typed tool's
+  distinct-buyer average. Empty results mean no publishable data, not zero buyers.
+  This restricted SQL subset is not a proof that arbitrary aggregate SQL is safe.
 - Ordinary non-demographic product revenue is NOT subject to cohort suppression.
   Cross-question inference protection remains design-only as agreed with Vlad.
 - Result guards verify output columns against the validated projection, reject
@@ -185,6 +203,44 @@ the month before it, not current month-to-date versus a full month.
   enforcement is implemented. Order status/timestamps remain whole-order metadata;
   use item-level facts for brand-specific fulfillment/sales metrics.
 
+## Editable style persona (optional Google Doc)
+
+Only presentation is editable: tone, audience, brevity and narrative format.
+Security/tool instructions and dynamic schema/brands/results stay in code/context.
+The default style works without external configuration.
+
+For the MVP, create a Google Doc with non-sensitive style instructions, for example:
+
+```text
+Use a concise, businesslike tone for executives.
+Start with up to three key findings, then limitations and recommended actions.
+Avoid filler and long repetitions of numbers already shown in the checked table.
+```
+
+Restrict editing to the trusted administrator, and enable **Anyone with the link:
+Viewer** for this style-only document. Never put secrets, PII or confidential data
+in it. Private/authenticated Google Docs are not supported by this MVP loader.
+If public-link sharing is prohibited, leave the setting empty and use the default.
+
+Copy the ID from `https://docs.google.com/document/d/DOCUMENT_ID/edit` into `.env`
+(pasting the full standard Google Docs link also works):
+
+```dotenv
+PERSONA_GOOGLE_DOC_ID=DOCUMENT_ID
+```
+
+Restart the CLI once to load this setting. Subsequent edits to document content
+are fetched on the next question, with no restart/redeploy. Within one question,
+all steps use the same persona. Google export may have propagation delay.
+The loader accepts at most 4,000 characters/16 KB. On fetch failure it keeps the
+last good in-process style, or the built-in default. Check `persona_loaded` /
+`persona_load_failed` events in local logs and the source/version prefix in the
+Langfuse Gemini system instruction. Nothing is fetched when the setting is empty.
+
+This changes generated prose only, not saved report contents, checked tables,
+CLI messages or permissions. The production admin-console design is in
+[HLD/PERSONA_MANAGEMENT.md](HLD/PERSONA_MANAGEMENT.md).
+
 ## Observability
 
 `logs/agent.jsonl` contains JSON events with IDs, action/stage, durations, row/byte
@@ -192,14 +248,73 @@ counts, token usage, and safe error codes. Prompts, SQL, identity, brand lists, 
 rows and exception text are not included. Set `--log-file` to change the path.
 These local events are separate from the optional Langfuse dashboard.
 
+### Separate PostgreSQL for Saved Reports
+
+The root Compose file includes `reports-postgres` (PostgreSQL 17 + pgvector) for the report
+library. Langfuse keeps its own `postgres` service; neither database nor volume
+is shared between them. MySQL is no longer used.
+Start only the reports database (without requiring the Langfuse stack):
+
+```powershell
+docker compose up -d --wait reports-postgres
+```
+
+Local connection: `127.0.0.1:5433`, database/user `retail_agent`, demo password
+`local-reports-demo`. Settings are listed in `.env.example`. Only loopback is
+exposed, data persists in `reports_postgres_data`, and the CLI account can
+SELECT/INSERT/UPDATE/DELETE reports, but has no superuser/DDL privileges.
+
+`docker/reports-postgres/001_saved_reports.sql` creates the application role/table;
+`002_vectors.sql` adds pgvector, the embedding, model ID and trusted brand scope.
+Both run automatically on a NEW volume. For an existing reports volume, first
+update the container image, then apply the idempotent migration without deleting data:
+
+```powershell
+docker compose up -d --wait reports-postgres
+Get-Content docker/reports-postgres/002_vectors.sql -Raw | docker compose exec -T reports-postgres psql -U postgres -d retail_agent -v ON_ERROR_STOP=1
+```
+
+If switching images produces a collation-version warning, reindex before refreshing
+the version (already done for this development workspace):
+
+```powershell
+docker compose exec -T reports-postgres psql -U postgres -d retail_agent -v ON_ERROR_STOP=1 -c "REINDEX DATABASE retail_agent;" -c "ALTER DATABASE retail_agent REFRESH COLLATION VERSION;"
+```
+
+The CLI connects lazily, so unavailable report storage does not block BigQuery
+analysis. `psycopg` uses parameterized operations, a 3-second connect timeout and
+5-second statement timeout. Ownership is checked in every read/write/delete;
+table grants/indexes alone do not enforce it. Current brands must contain the
+saved brand scope; legacy rows without provenance are withheld.
+
+Embeddings use `gemini-embedding-2`, 768 dimensions, via the existing Gemini API
+key. The formatted title/content is capped at **8,000 UTF-8 bytes** (a conservative
+MVP input bound); oversized answers are rejected, never silently truncated.
+Save sends the complete bounded snapshot to Google, then inserts text/vector
+atomically. Search sends a query embedding and returns up to 10 owner/brand-scoped
+candidates, prioritizing literal query matches, with bounded excerpts. Exact
+vector search needs no ANN index for this small library. Results are historical
+snapshots and nearest neighbors are not guaranteed relevant matches.
+
+Deletion uses literal substring, report ID, current conversation or explicit all-
+reports scope, NOT semantic nearest neighbors. Preview freezes at most 100 IDs
+and requires a separate `/confirm` within 5 minutes. `/cancel`, `/reset`, process
+exit or any new ordinary question cancels it. Confirmation bypasses Gemini,
+rechecks owner/brands and transactionally deletes only previewed IDs. It is
+single-use, including on failure; get a fresh preview before retrying. No database
+success is claimed on ambiguous connection/commit errors.
+
+Demo credentials are not for production. See [HLD/SAVED_REPORTS.md](HLD/SAVED_REPORTS.md).
+
 ### Local Langfuse dashboard (optional)
 
 Install/start Docker Desktop (Linux containers). The root `docker-compose.yaml`
 runs Langfuse from ready-made images alongside its storage services; there is
 **no need to clone the Langfuse source repository**. Fixed demo credentials and
 the required encryption key are already in Compose. No `.env.langfuse` or manual
-secret generation is required. **Local MVP only, not production.** Only UI and
-media ports are exposed, both on loopback; databases stay internal.
+secret generation is required. **Local MVP only, not production.** Langfuse UI,
+media ports and the reports PostgreSQL port are exposed only on loopback; Langfuse's
+databases stay internal.
 From this repository root:
 
 ```powershell
@@ -314,9 +429,9 @@ the model is told when history has been trimmed. /reset clears both.
 
 Default business assumption: revenue is completed-item sale_price (status Complete);
 estimated gross profit subtracts current product cost, not historical accounting
-cost. Status breakdowns include all statuses intentionally. Ordinary observations
-carry normalized submitted SQL, executed with brand scoping; demographic ones
-carry the builder's actual structured filters. We no longer maintain a separate
+cost. Status breakdowns include all statuses intentionally. Query observations
+carry normalized submitted SQL, executed with brand scoping; demographic queries
+also carry the checked-subset/average-age caveat. We do not maintain a separate
 handwritten interpreter of SQL status predicates. The state field is worldwide,
 not inherently US-only. Generated prose is not independently fact-checked: even
 with correct tables, a model can explain a formula incorrectly. Business metric
