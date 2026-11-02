@@ -6,7 +6,13 @@ a small LangGraph loop, and deterministic SQL validation/brand access controls.
 **Current milestone:** iterative analysis, follow-up questions, bounded query
 repair, unified analytical SQL (including checked demographic aggregates), saved reports with vector search and explicit
 deletion confirmation, optional local Langfuse tracing, local logs, and a CLI.
+Explicit persistent user memory stores short strings and per-entry embeddings.
 This is not a production security system; the production HLD remains separate.
+
+**Documentation:** [HLD index](HLD/README.md),
+[production design](HLD/PRODUCTION_HLD.md), [current handoff](HLD/HANDOFF.md),
+[agent instructions](AGENTS.md). Production services and known gaps are explicitly
+separated from the runnable prototype.
 
 ## Setup (Windows PowerShell)
 
@@ -107,7 +113,8 @@ that snapshot. No fresh SQL is run for saving. Creating AND saving a new analysi
 in one request is deliberately two turns in this MVP: analysis first, save next.
 There is no autosave. The saved library survives process restarts.
 
-Commands: `/help`, `/reset`, `/exit`, `/confirm`, `/cancel`. History is bounded,
+Commands: `/help`, `/reset`, `/exit`, `/confirm`, `/cancel`, `/memories`,
+`/forget ID`, `/forget-all`. Conversation history is bounded,
 held only in memory, and removed on reset/exit. Reset also changes conversation ID,
 clears the last-answer snapshot and pending deletion, but never deletes reports.
 Do not enter personal contact details in the chat.
@@ -127,7 +134,7 @@ flowchart TD
     O -->|failure/budget stop| F[Honest partial response]
 ```
 
-LangGraph manages three nodes (`plan`, `query`, `reports`). It does not grant permissions or
+LangGraph manages four nodes (`plan`, `query`, `reports`, `remember`). It does not grant permissions or
 make SQL safe. The Gemini SDK handles structured actions with Pydantic. We do not
 use LangChain agents or SQL toolkits. Langfuse tracing is optional and explicitly
 enabled through `.env`; its LangChain callback traces the graph and explicit
@@ -140,6 +147,45 @@ business-specific bucket parameter. For example, `FLOOR(u.age/5)*5 AS age_from`
 and `FLOOR(u.age/5)*5+4 AS age_to` express five-year groups directly in SQL.
 Rounded aggregates and ratios of approved aggregates use the same validation.
 Report operations remain a separate typed `report` action.
+
+### Persistent user memory
+
+Explicitly ask to remember preferences or a permitted self-declared operator fact:
+
+```text
+Show the most profitable brands in bullet points, remember this format.
+Remember that my name is Yerassyl.
+/memories
+/forget <memory-ID>
+/forget-all
+```
+
+A mixed request runs query and remember as separate internal steps but returns one
+final answer; neither step requires another user message. One-off "this report in
+bullets" is not persistent intent. The model extracts at most 5 short strings,
+code requires an explicit current-question marker, and each new string gets a
+Google embedding before an atomic owner-scoped write. One memory write attempt
+is allowed per turn. Memory errors do not stop ordinary analysis.
+
+The MVP injects all of the current user's bounded memory (20 entries, 200 characters
+each) into a separate context block on every question. Entries are not security
+instructions or verified identity. `/reset`/restart do not erase them. Use
+`/memories` to inspect and exact `/forget` commands to delete without model calls.
+Only personal memory is affected; Saved Reports still require deletion preview
+and `/confirm`. Exact normalized duplicates are skipped; semantic deduplication
+and selective retrieval are future work described in [HLD/USER_MEMORY.md](HLD/USER_MEMORY.md).
+
+The operator's OWN name is allowed on explicit request; customer PII, contact
+details, credentials and authorization overrides are not. Embeddings and mounted
+memory are sent to Google; enabled Langfuse can retain the text as well. Do not
+use this MVP for arbitrary sensitive profile storage.
+
+For an existing application DB, apply the memory migration once (fresh volumes
+run it automatically):
+
+```powershell
+Get-Content docker/reports-postgres/003_user_memory.sql -Raw | docker compose exec -T reports-postgres psql -U postgres -d retail_agent -v ON_ERROR_STOP=1
+```
 
 Each question allows at most 5 SQL attempts, 7 model calls, 3 consecutive query
 failures (initial attempt + TWO automatic repair attempts), and 300 MB of scan/billing
@@ -248,10 +294,10 @@ counts, token usage, and safe error codes. Prompts, SQL, identity, brand lists, 
 rows and exception text are not included. Set `--log-file` to change the path.
 These local events are separate from the optional Langfuse dashboard.
 
-### Separate PostgreSQL for Saved Reports
+### Separate PostgreSQL for Saved Reports and user memory
 
 The root Compose file includes `reports-postgres` (PostgreSQL 17 + pgvector) for the report
-library. Langfuse keeps its own `postgres` service; neither database nor volume
+library and user memory. Langfuse keeps its own `postgres` service; neither database nor volume
 is shared between them. MySQL is no longer used.
 Start only the reports database (without requiring the Langfuse stack):
 
@@ -265,13 +311,16 @@ exposed, data persists in `reports_postgres_data`, and the CLI account can
 SELECT/INSERT/UPDATE/DELETE reports, but has no superuser/DDL privileges.
 
 `docker/reports-postgres/001_saved_reports.sql` creates the application role/table;
-`002_vectors.sql` adds pgvector, the embedding, model ID and trusted brand scope.
-Both run automatically on a NEW volume. For an existing reports volume, first
-update the container image, then apply the idempotent migration without deleting data:
+`002_vectors.sql` adds pgvector, the embedding, model ID and trusted brand scope;
+`003_user_memory.sql` creates owner-scoped memory. All three run automatically on a
+NEW volume. Init scripts do not rerun on existing volumes. For an existing reports
+volume with 001 already applied, update the image and apply missing migrations in
+order without deleting data (002/003 are idempotent):
 
 ```powershell
 docker compose up -d --wait reports-postgres
 Get-Content docker/reports-postgres/002_vectors.sql -Raw | docker compose exec -T reports-postgres psql -U postgres -d retail_agent -v ON_ERROR_STOP=1
+Get-Content docker/reports-postgres/003_user_memory.sql -Raw | docker compose exec -T reports-postgres psql -U postgres -d retail_agent -v ON_ERROR_STOP=1
 ```
 
 If switching images produces a collation-version warning, reindex before refreshing
@@ -335,7 +384,7 @@ LANGFUSE_BASE_URL=http://localhost:3000
 ```
 
 Run `uv sync`, restart the CLI, ask a question, then open **Tracing** in your local
-Langfuse project. Each `retail_question` run shows `plan`/`query` steps, their state
+Langfuse project. Each `retail_question` run shows `plan`/`query`/`reports`/`remember` steps, their state
 updates and nested `Gemini` generations with input, validated actions and usage.
 The trace's `turn_id` matches local log events. Query failures handled by the
 agent appear as error observations, not necessarily red failed spans. BigQuery
@@ -343,7 +392,7 @@ sub-stages are not individually instrumented yet. Events are batched in the
 background and flushed on normal CLI shutdown; allow a short delay in the UI.
 
 **Privacy warning:** tracing exports graph state and Gemini I/O, including
-questions, history, SQL, brand lists and observations. Comprehensive trace PII
+questions, history, saved user memory, SQL, brand lists and observations. Comprehensive trace PII
 redaction is deferred; enable only with demo/non-sensitive inputs. Existing data
 guards remain enabled but do not sanitize every trace field. Set
 `LANGFUSE_TRACING_ENABLED=false` to disable export. Never commit the API keys.
@@ -401,6 +450,23 @@ Get-Content logs/agent.jsonl -Tail 20
 uv run python -m unittest discover -s tests -v
 ```
 
+Optional real local PostgreSQL/pgvector tests (no cloud calls; require migrated DB):
+
+```powershell
+docker compose up -d --wait reports-postgres
+$env:RETAIL_TEST_POSTGRES='1'
+uv run python -B -m unittest discover -s tests -q
+Remove-Item Env:RETAIL_TEST_POSTGRES
+docker compose config --quiet
+git diff --check
+```
+
+The most recent pre-handoff run passed 194 tests including local DB integration.
+Default tests skip opt-in DB cases. Test fixtures use temporary owners and clean
+up only their own records. Model-based extraction/formatting and complete semantic
+correctness remain unproven; known manual memory failures are in
+[HLD/USER_MEMORY.md](HLD/USER_MEMORY.md).
+
 Tests run the actual graph, analyst prompts, SQL checks, brand rewriting and
 result guard against mocked Gemini/BigQuery backends. SQLite fixtures separately
 test row isolation, including mixed-brand purchases. No credentials or paid API
@@ -410,7 +476,8 @@ These examples do not replace a broader correctness/security evaluation.
 
 See `HLD/QUERY_SAFETY.md` for implementation details and `HLD/*.mmd` for the
 proposed broader architecture. `HLD/STAKEHOLDER_POLICY.md` records the confirmed
-Harry/Vlad policy clarifications. Other assignment features remain planned.
+Harry/Vlad policy clarifications. Golden retrieval, reviewed system learning,
+production deployment and broader evaluation remain design-only.
 
 ### Result delivery
 
@@ -449,6 +516,34 @@ correctness evaluation; business metric definitions and model interpretations
 still require evaluation.
 
 ## Design notes and archive
+
+### Clean clone on another computer
+
+Install Git, Python 3.13+, uv, Google Cloud CLI and Docker Desktop with Linux
+containers. Clone the repository and follow the setup section, then start
+`reports-postgres` and run the CLI. Replace template `Brand A/B/C` values in the
+ignored `access.local.json` with actual dataset brands. For example, a small
+`manager_a` demo may use `Calvin Klein`, `Nautica`, `Tommy Hilfiger`; this is local
+demo configuration, not verified product entitlement.
+
+Recreate `.env`, the Gemini key/model/project, Google ADC/quota project and optional
+Google Doc setting. `uv sync` uses the committed `uv.lock`. Fresh Docker volumes
+initialize all migrations; reused volumes need missing migrations as above.
+Langfuse is optional: create a local UI project and put that project's new keys in
+`.env`. No `.env.langfuse` is needed.
+
+Git does **not** transfer reports, memories, Docker volumes, traces/UI accounts,
+logs, ADC credentials or the Google Doc contents. A new machine starts with empty
+local storage unless you separately back up/restore it securely. Never publish DB
+backups or credentials. Stop containers with `docker compose down`, not `down -v`.
+Clean-machine execution has not yet been verified; record it as a separate check.
+
+Before public publication, review notebook outputs, inspection utilities and the
+duplicate access example; these exploratory files are not required by the CLI and
+some contain a developer-specific Google project ID/local path. Generated bytecode
+has been removed from Git's index while preserving local files. `.gitignore` does not
+automatically untrack existing files. The old handoff was replaced to remove stale/personal
+conversation context, but prior commits still retain their original contents.
 
 Start at [HLD/README.md](HLD/README.md). Current implementation, confirmed client
 policy, historical experiments and proposed production services are labeled

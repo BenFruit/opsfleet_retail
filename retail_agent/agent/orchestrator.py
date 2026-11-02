@@ -10,6 +10,7 @@ from retail_agent.agent.models import AgentLimits, AgentState, TurnResult
 from retail_agent.data.query_service import QueryService, QueryServiceError
 from retail_agent.llm.analyst import Analyst
 from retail_agent.llm.client import describe_model_error
+from retail_agent.memory.models import UserMemoryError
 from retail_agent.observability.tracing import get_callbacks, trace_operation
 from retail_agent.reports.models import ReportError
 from retail_agent.reports.service import render_reports
@@ -27,6 +28,7 @@ class AnalyticalAgent:
         self, analyst: Analyst, query_service: QueryService, *, manager_id: str,
         limits: AgentLimits | None = None,
         reports=None,
+        memory=None,
     ):
         self.allowed_brands = sorted(get_allowed_brands(manager_id))
         self.authorized_brand_count = len(self.allowed_brands)
@@ -38,6 +40,7 @@ class AnalyticalAgent:
         self.first_question: str | None = None
         self.history_truncated = False
         self.reports = reports
+        self.memory = memory
         self.conversation_id = uuid4().hex
         self.last_answer: str | None = None
         self.last_answer_brands: list[str] = []
@@ -46,8 +49,10 @@ class AnalyticalAgent:
         graph.add_node("plan", self._plan)
         graph.add_node("query", self._query)
         graph.add_node("reports", self._reports)
+        graph.add_node("remember", self._remember)
         graph.add_edge(START, "plan")
-        graph.add_conditional_edges("plan", self._after_plan, {"query": "query", "reports": "reports", "plan": "plan", "end": END})
+        graph.add_conditional_edges("plan", self._after_plan, {"query": "query", "reports": "reports", "remember": "remember", "plan": "plan", "end": END})
+        graph.add_edge("remember", "plan")
         graph.add_conditional_edges("reports", lambda state: "end" if state["answer"] else "plan", {
             "plan": "plan", "end": END,
         })
@@ -71,6 +76,23 @@ class AnalyticalAgent:
         # destructive authorization. These exact CLI commands bypass the model.
         if isinstance(question, str):
             command = question.strip().lower()
+            if command in {"/memories", "/forget-all"} or command.startswith("/forget "):
+                if self.reports is not None:
+                    self.reports.cancel()
+                with trace_operation("user_memory_command", {"command": command.split()[0]}) as span:
+                    try:
+                        if self.memory is None:
+                            raise UserMemoryError("User memory is not configured.")
+                        if command == "/memories":
+                            entries = self.memory.load()
+                            text = "\n".join(f"{item['memory_id']} | {item['text']}" for item in entries) or "No saved user memories."
+                        else:
+                            text = self.memory.forget(None if command == "/forget-all" else command.split(maxsplit=1)[1])
+                    except UserMemoryError as error:
+                        text = str(error)
+                    if span is not None:
+                        span.update(output={"message": text})
+                return TurnResult(text, 0, 0, 0)
             if command in {"/confirm", "/cancel"}:
                 with trace_operation("report_confirmation", {"command": command, "conversation_id": self.conversation_id}) as span:
                     try:
@@ -101,6 +123,7 @@ class AnalyticalAgent:
             self.first_question = question
 
         state: AgentState = {
+            "memory_calls": 0, "user_memory": [], "memory_status": "disabled",
             "action_retries": 0,
             "report_calls": 0,
             "question": question, "history": list(self.history), "observations": [],
@@ -110,6 +133,13 @@ class AnalyticalAgent:
         started = monotonic()
         try:
             self.analyst.refresh_persona()
+            if self.memory is not None:
+                try:
+                    state["user_memory"] = self.memory.load()
+                    state["memory_status"] = "ready"
+                except UserMemoryError:
+                    state["memory_status"] = "unavailable"
+                    logger.warning("user_memory_load_failed", extra={"error_code": "memory_unavailable"})
             # Langfuse is opt-in. Keep implicit LangSmith export disabled even
             # when stale LANGSMITH_TRACING variables remain in the environment.
             with tracing_context(enabled=False):
@@ -127,7 +157,7 @@ class AnalyticalAgent:
             "question": question, "answer": result["answer"][:8000],
             "observations": result["observations"][-2:],
         }
-        if not result["report_calls"] and result["action"] is not None and result["action"].action == "answer":
+        if not result["report_calls"] and (not result["memory_calls"] or result["queries"]) and result["action"] is not None and result["action"].action == "answer":
             query_errors = [item for item in result["observations"] if item["status"] == "error" and item.get("code") not in {"model_invalid_action", "model_invalid_json"}]
             if not query_errors or any(item["status"] == "ok" for item in result["observations"]):
                 self.last_answer = result["answer"]
@@ -146,6 +176,7 @@ class AnalyticalAgent:
             "model_calls": result["model_calls"], "scan_bytes_used": result["scan_bytes_used"],
             "duration_ms": round((monotonic() - started) * 1000),
             "report_calls": result["report_calls"],
+            "memory_calls": result["memory_calls"],
         })
         return TurnResult(result["answer"], result["queries"], result["model_calls"], result["scan_bytes_used"])
 
@@ -155,17 +186,20 @@ class AnalyticalAgent:
         started = monotonic()
         try:
             action = self.analyst.decide(
+                user_memory={"status": state["memory_status"], "items": state["user_memory"]},
                 question=state["question"], history=state["history"],
                 observations=state["observations"],
                 access_context={"authorized_brands": self.allowed_brands},
                 session_context={
                     "reports_available": self.reports is not None,
                     "has_answer_to_save": self.last_answer is not None,
+                    "memory_available": self.memory is not None,
                     "first_question": self.first_question,
                     "history_truncated": self.history_truncated,
                 },
                 budget={
                     "report_calls": self.limits.max_report_calls - state["report_calls"],
+                    "memory_calls": self.limits.max_memory_calls - state["memory_calls"],
                     "sql_attempts": self.limits.max_queries - state["queries"],
                     "scan_bytes": max(0, self.limits.max_scan_bytes - state["scan_bytes_used"]),
                 },
@@ -195,7 +229,7 @@ class AnalyticalAgent:
                     "action_retries": state["action_retries"] + 1,
                     "observations": [*state["observations"], {
                         "status": "error", "code": code,
-                        "message": "Your previous response was rejected before its proposed action executed. Earlier successful tool results remain valid; do not repeat successful writes. Return a corrected JSON action: query with SQL only, report with a valid request only (query is required, use empty string when not searching), or answer with text only. Never use a demographic action. Do not claim the rejected action succeeded.",
+                        "message": "Your previous response was rejected before its proposed action executed. Earlier successful tool results remain valid; do not repeat successful writes. Return ONE corrected JSON action: query with SQL only, report with a valid request only (query is required, use empty string when not searching), remember with remember.memories strings only, or answer with text only. Never use a demographic action. Do not claim the rejected action succeeded.",
                     }],
                 }
             return {
@@ -232,6 +266,15 @@ class AnalyticalAgent:
                     update["answer"] += "\n\nReport sources:\n" + "\n".join(
                         render_reports(item) for item in report_results if item["operation"] in {"search", "list"}
                     )
+                for event in state["observations"]:
+                    if event["status"] == "memory":
+                        update["answer"] += "\n\n" + event["message"]
+        elif action.action == "remember":
+            if state["memory_calls"] >= self.limits.max_memory_calls:
+                return {**update, "action": None, "observations": [*state["observations"], {
+                    "status": "memory", "saved": False,
+                    "message": "Memory was already attempted this turn. Do not retry the write; continue the remaining analysis or answer.",
+                }]}
         elif action.action == "report":
             if state["report_calls"] >= self.limits.max_report_calls:
                 update["answer"] = "The report-tool budget was exhausted."
@@ -245,7 +288,30 @@ class AnalyticalAgent:
             return "end"
         if state["action"] is None:
             return "plan"
+        if state["action"].action == "remember":
+            return "remember"
         return "reports" if state["action"].action == "report" else "query"
+
+    def _remember(self, state: AgentState) -> dict:
+        update = {"memory_calls": state["memory_calls"] + 1}
+        try:
+            if self.memory is None:
+                raise UserMemoryError("User memory is not configured.")
+            observation = self.memory.remember(state["action"].remember,
+                                               question=state["question"], turn_id=state["turn_id"])
+            try:
+                update["user_memory"] = self.memory.load()
+                update["memory_status"] = "ready"
+            except UserMemoryError:
+                update["memory_status"] = "unavailable"
+        except UserMemoryError as error:
+            observation = {"status": "memory", "saved": False, "message": str(error)}
+        except Exception:
+            observation = {"status": "memory", "saved": False,
+                           "message": "Memory write was not confirmed. Inspect /memories before retrying."}
+        update["observations"] = [*state["observations"], observation]
+        # Always return to planning: remember never ends a mixed-intent turn.
+        return update
 
     def _reports(self, state: AgentState) -> dict:
         request = state["action"].report

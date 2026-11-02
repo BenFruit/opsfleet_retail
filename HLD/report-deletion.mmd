@@ -1,11 +1,12 @@
 flowchart TD
-    U["User asks to delete reports"] --> AUTH["Authenticate session"]
-    AUTH --> FIND["Find matching reports OWNED by this user"]
-    FIND --> PREVIEW["Show exact report IDs, titles, count and scope"]
-    PREVIEW --> ASK{"Explicit confirmation?"}
-    ASK -->|"No / timeout / ambiguity"| CANCEL["Cancel — no deletion"]
-    ASK -->|"Yes"| VERIFY["Recheck owner + pending-action token"]
-    VERIFY -->|"Valid"| DELETE["Delete exact reviewed report IDs"]
-    VERIFY -->|"Invalid / changed"| CANCEL
-    DELETE --> AUDIT["Safe audit record + outcome"]
-    AUDIT --> DONE["Confirm deleted count"]
+    U["Delete request under trusted demo identity"] --> FIND["Owner and current-brand-scoped literal / ID / conversation / all lookup"]
+    FIND --> CAP{"At most 100 matches?"}
+    CAP -->|no| NARROW["Require narrower scope; no partial deletion"]
+    CAP -->|yes| PREVIEW["Show IDs, titles, count; freeze exact IDs in process for 5 minutes"]
+    PREVIEW --> ASK{"Separate exact /confirm?"}
+    ASK -->|"cancel / new question / reset / restart / expiry"| CANCEL["Invalidate preview; no deletion"]
+    ASK -->|yes| VERIFY["Consume pending approval; bypass Gemini"]
+    VERIFY --> DELETE["Transaction: recheck owner and current brands; delete frozen IDs only"]
+    DELETE -->|"confirmed commit"| DONE["Report actual deleted count"]
+    DELETE -->|"error or uncertain commit"| FAIL["No success claim; inspect library before fresh preview"]
+    NOTE["Real login and durable signed tokens are production proposals, not current implementation"] -.-> VERIFY

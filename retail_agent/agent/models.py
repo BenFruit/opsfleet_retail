@@ -3,18 +3,25 @@ from typing import Any, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from retail_agent.reports.models import ReportRequest
+from retail_agent.memory.models import RememberRequest
 
 
 class AgentAction(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    action: Literal["query", "answer", "report"]
+    action: Literal["query", "answer", "report", "remember"]
     sql: str = Field(default="", max_length=20_000)
     answer: str = Field(default="", max_length=8_000)
     report: ReportRequest | None = None
+    remember: RememberRequest | None = None
 
     @model_validator(mode="after")
     def check_action(self):
+        if self.action == "remember":
+            if self.remember is None or self.sql or self.answer or self.report is not None:
+                raise ValueError("remember requires memory strings only")
+        elif self.remember is not None:
+            raise ValueError("remember payload belongs only to remember actions")
         if self.action == "report":
             if self.report is None or self.sql or self.answer:
                 raise ValueError("report requires a report request only")
@@ -29,6 +36,7 @@ class AgentAction(BaseModel):
 
 @dataclass(frozen=True)
 class AgentLimits:
+    max_memory_calls: int = 1
     max_report_calls: int = 5
     max_queries: int = 5
     max_model_calls: int = 7
@@ -47,6 +55,9 @@ class AgentLimits:
 
 
 class AgentState(TypedDict):
+    memory_calls: int
+    user_memory: list[dict]
+    memory_status: str
     action_retries: int
     report_calls: int
     question: str

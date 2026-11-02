@@ -13,12 +13,14 @@ from retail_agent.observability.tracing import shutdown_tracing
 from retail_agent.reports.embeddings import ReportEmbedder
 from retail_agent.reports.repository import ReportRepository
 from retail_agent.reports.service import ReportLibrary
+from retail_agent.memory.repository import MemoryRepository
+from retail_agent.memory.service import UserMemory
 from retail_agent.schema.service import SchemaService
 from retail_agent.security.access import get_allowed_brands, load_brand_access
 
 
 def run_chat(agent: AnalyticalAgent) -> None:
-    print("Retail analyst. Commands: /exit, /reset, /help, /confirm, /cancel")
+    print("Retail analyst. Commands: /exit, /reset, /help, /confirm, /cancel, /memories, /forget ID, /forget-all")
     print("Demo identity is fixed at startup. Do not enter personal contact details.")
     while True:
         try:
@@ -34,6 +36,7 @@ def run_chat(agent: AnalyticalAgent) -> None:
                 print("Demographics use aggregate SQL with computed groups; small cohorts are suppressed.")
                 print("Ask to save the last answer, find/list/open your reports, or preview deletion.")
                 print("Deletion requires a separate /confirm; /cancel or any new question cancels it.")
+                print("Explicitly ask to remember preferences; /memories lists them, /forget ID or /forget-all removes them.")
                 continue
             if not question:
                 continue
@@ -76,11 +79,14 @@ def main() -> int:
         schema = {table: schema_service.get_table_schema(table) for table in (
             "orders", "order_items", "products", "users",
         )}
+        repository = ReportRepository()
+        embedder = ReportEmbedder(llm)
         agent = AnalyticalAgent(
             Analyst(llm, schema),
             QueryService(runner, QueryLimits(minimum_cohort_size=args.min_cohort_size)),
             manager_id=args.manager,
-            reports=ReportLibrary(ReportRepository(), ReportEmbedder(llm), manager_id=args.manager),
+            reports=ReportLibrary(repository, embedder, manager_id=args.manager),
+            memory=UserMemory(MemoryRepository(repository.connection), embedder, manager_id=args.manager),
         )
         run_chat(agent)
         return 0

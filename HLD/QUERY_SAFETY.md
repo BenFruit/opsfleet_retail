@@ -2,11 +2,13 @@
 
 ## Decision
 
-Model actions are `query`, `report`, `answer`. The model writes SQL for BOTH
+Model actions are `query`, `report`, `remember`, `answer`. The model writes SQL for BOTH
 ordinary and demographic analytics. The former typed `demographic` action and
 its dimensions/metric SQL builder were removed: they unnecessarily required code
 changes for new business groupings. Demographic policy still exists in the data
 layer; removing a tool does not remove privacy constraints.
+Explicit owner-scoped operator memory is documented separately in USER_MEMORY.md;
+it is not a route to customer PII, authorization changes or tool-policy overrides.
 
 For example, five-year intervals use `FLOOR(u.age/5)*5` and `...+4` in GROUP BY.
 Ten-year intervals, CASE-based dimensions, rounding and ratios of approved

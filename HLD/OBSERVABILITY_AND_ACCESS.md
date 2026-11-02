@@ -4,7 +4,8 @@
 
 Langfuse is selected instead of LangSmith because a local self-hosted dashboard
 is wanted without a LangSmith Enterprise license. Its LangChain callback emits
-one root trace per question (`retail_question`) with `plan` and `query` child
+one root trace per question (`retail_question`) with `plan`, `query`, `reports`
+and `remember` child
 observations. Explicit generation observations capture Gemini prompt/system
 instruction, validated actions and token usage under the corresponding planning
 step. Root metadata contains `turn_id` for correlation with `logs/agent.jsonl`.
@@ -25,7 +26,7 @@ the observation code and counters, not just the dashboard's success indicator.
 ## Deferred: PII-safe trace export (required before production)
 
 **Full trace payload sanitization is NOT implemented.** Enabled tracing can export
-question/history, schema context, authorized brand names, SQL, tool observations,
+question/history, saved operator memory, schema context, authorized brand names, SQL, tool observations,
 model output and exception details. Graph state includes proposed actions before
 downstream safety checks, and generation tracing precedes final text checks.
 Existing SQL policies and pre-LLM result guards remain in place, but they are not
@@ -75,7 +76,8 @@ None of these access/scaling changes are implemented by the Langfuse integration
 The repository's root `docker-compose.yaml` adapts the upstream Langfuse stack
 for local development; no separate source clone is needed. See README for commands.
 It includes web/worker, PostgreSQL, ClickHouse, Redis and MinIO, with named volumes.
-Public ports are bound to loopback; databases have no published ports. Fixed demo
+Public ports are bound to loopback; Langfuse databases have no published ports.
+The separate application reports/memory PostgreSQL publishes loopback port 5433. Fixed demo
 passwords, salt, session secret and encryption key live in Compose for a one-command
 MVP startup. No `.env.langfuse` is required; real CLI project API keys stay in ignored
 `.env`. Before production replace all demo secrets with managed secrets, including

@@ -1,16 +1,22 @@
 flowchart TB
-    U["CLI now / Web later"] --> APP["Python agent app — Cloud Run in production"]
-    APP <--> MODEL["Gemini API prototype / Vertex AI production"]
-    APP --> SCHEMA["SchemaService + curated policy catalog"]
-    APP --> QUERY["QueryService: AST, auth, dry run, result sanitizer"]
-    QUERY --> BQ[("BigQuery")]
-    ENT["Trusted product entitlement provider"] --> QUERY
-    SCHEMA --> QUERY
-    APP <--> KG["Golden Knowledge: versioned trios + retrieval"]
-    APP <--> DB[("Reports, sessions, preferences / Cloud SQL")]
-    ADMIN["Nontechnical admin"] --> CFG["Versioned persona config"]
+    U["CLI / future web client"] --> AUTH["OIDC identity + authenticated HTTPS API"]
+    AUTH --> APP["Cloud Run: modular Python LangGraph application"]
+    ENT["Authoritative tenant-brand entitlements"] --> APP
+    APP <--> MODEL["Gemini on Vertex AI"]
+    APP --> QUERY["QueryService: policy, scope, privacy, dry run, budgets"]
+    QUERY --> BQ[("BigQuery safe views / data-layer authorization")]
+    ENT --> BQ
+    APP <--> DB[("Cloud SQL PostgreSQL + pgvector: reports, memory, sessions, confirmations, index")]
+    APP <--> RET["Authorized hybrid Golden retrieval"]
+    RET --> DB
+    RET --> GCS[("Cloud Storage: immutable reviewed Golden trios")]
+    ADMIN["Authenticated persona admin: review, version, publish, rollback"] --> CFG["Versioned style config"]
     CFG --> APP
-    APP -.-> TRACE["OpenTelemetry + optional Langfuse"]
-    QUERY -.-> TRACE
-    TEST["Offline evaluation / safety regression suite"] -.-> APP
-    SECRET["Secret Manager + least-privilege service account"] -.-> APP
+    REVIEW["Sanitized feedback + analyst review"] --> JOB["Cloud Run Jobs / Tasks: ingestion and offline evaluation"]
+    JOB --> GCS
+    JOB --> DB
+    JOB -.->|"release gate, not autonomous learning"| APP
+    APP -.-> OBS["Sanitized OpenTelemetry / Langfuse + Cloud Monitoring"]
+    QUERY -.-> OBS
+    SEC["Secret Manager, least-privilege IAM, private DB, backups"] -.-> APP
+    NOTE["PROPOSED production target - not deployed by local Compose"]

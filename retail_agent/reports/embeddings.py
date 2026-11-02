@@ -26,7 +26,7 @@ class ReportEmbedder:
         if self.model != "gemini-embedding-2":
             raise ValueError("This MVP supports gemini-embedding-2 only; changing models needs reindexing")
 
-    def embed(self, text: str, *, document: bool, title: str = "") -> list[float]:
+    def embed(self, text: str, *, document: bool, title: str = "", observation_name: str = "report_embedding") -> list[float]:
         check_text(text)
         check_text(title)
         # Bound conservatively in UTF-8 bytes, never silently truncate a report.
@@ -34,7 +34,7 @@ class ReportEmbedder:
         if len(formatted.encode("utf-8")) > 8_000:
             raise ReportError("Report is too large to embed in this MVP. Request a shorter answer.")
         try:
-            with trace_generation(self.model, formatted, None, name="report_embedding") as span:
+            with trace_generation(self.model, formatted, None, name=observation_name) as span:
                 result = self.client.models.embed_content(
                     model=self.model, contents=formatted,
                     config=types.EmbedContentConfig(output_dimensionality=DIMENSIONS),

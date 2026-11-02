@@ -1,18 +1,16 @@
 flowchart TB
-    subgraph POLICY["Column access policy — current proposed mapping"]
-      A["ALLOWED: IDs, status, products, prices, timestamps"]
-      G["AGGREGATE_ONLY: age, gender, city, state, country, traffic_source"]
-      P["BLOCKED_PII: name, email, street address, postal code, coordinates, geom"]
-    end
-    REQ["User request + trusted identity"] --> PLANNER["Agent proposes SQL"]
-    PLANNER --> AST["SQLGlot AST / policy validator"]
-    RIGHTS["Trusted product entitlements"] --> AST
-    POLICY --> AST
-    AST -->|"Pass"| DRY["BigQuery dry-run / budgets"]
-    AST -->|"Fail"| REJECT["Reject + safe explanation"]
-    DRY --> BQ[("BigQuery read-only account")]
-    BQ --> SAN["Sanitize results + suppress unsafe groups"]
-    SAN -->|"Safe result only"| LLM["Gemini: analyze and decide next step"]
-    LLM --> GUARD["Final response guard"]
-    GUARD --> USER["User"]
-    note["No raw PII to Gemini or third-party telemetry"] -.-> SAN
+    POLICY["Curated column policy: allowed / aggregate-only / blocked PII"] --> AST
+    REQ["Checked user input + startup identity"] --> MODEL["Gemini proposes SQL"]
+    MODEL --> AST["SQLGlot source, column and AST validation"]
+    AST --> DEMO["If demographic: flat aggregate shape + canonical joins + common contributor guard"]
+    DEMO --> SCOPE["Rewrite EVERY physical source to authorized brands and approved columns"]
+    RIGHTS["Trusted brand parameters"] --> SCOPE
+    SCOPE --> DRY["Dry run, billed-byte cap and execution bounds"]
+    DRY --> BQ[("BigQuery")]
+    BQ --> RESULT["ResultGuard: cohort recheck, shape, scalar, size and text checks"]
+    RESULT --> SAFE["Only checked bounded observations to Gemini"]
+    SAFE --> ANSWER["Final text checks + app-rendered checked tables"]
+    AST -->|reject| ERROR["Controlled feedback; bounded safe repair"]
+    DEMO -->|reject| ERROR
+    RESULT -->|reject| ERROR
+    GAP["NOT solved: cross-question inference, comprehensive free-text PII and raw optional Langfuse export"]

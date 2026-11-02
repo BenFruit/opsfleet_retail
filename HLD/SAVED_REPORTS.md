@@ -35,8 +35,9 @@ Embedding is obtained before the database transaction. Text/vector are inserted
 atomically. A write is never retried automatically; ambiguous failures ask the
 user to inspect the library before retrying. Storage is lazy and bounded by
 connection/statement timeouts; its outage does not prevent ordinary analysis.
-Fresh volumes run both SQL init scripts. Existing volumes need the explicit
-idempotent `002_vectors.sql` migration described in README, not volume deletion.
+Fresh volumes run all three SQL init scripts (001 reports, 002 vectors, 003 user
+memory). Existing volumes need missing migrations applied in order as described
+in README, not volume deletion.
 
 ## Ownership, provenance and retrieval
 

@@ -1,7 +1,7 @@
 # Confirmed access and demographic policy
 
 Source: user-provided Slack replies from Harry and Vlad. These clarifications
-override earlier open questions in HANDOFF.md. They do not imply every rule is
+resolve earlier policy questions. They do not imply every rule is
 already implemented; see implementation status below.
 
 ## Confirmed rules
@@ -40,3 +40,11 @@ already implemented; see implementation status below.
 - Generic free-text PII detection is not solved by the current email/phone checks.
 - Cross-question inference remains a documented production concern, not a planned
   prototype subsystem.
+
+## Separate operator-profile decision (not a stakeholder clarification)
+
+The developer approved remembering an analyst/operator's own voluntarily supplied
+name on explicit request. This is self-declared profile context, never verified
+identity or access permission. It does NOT relax the customer-dataset PII rules
+above. The feature sends selected operator memory to Gemini/embedding APIs; see
+USER_MEMORY.md for consent, scope and remaining free-text/trace privacy limitations.

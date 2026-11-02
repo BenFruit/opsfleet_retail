@@ -19,6 +19,7 @@ services:
       - reports_postgres_data:/var/lib/postgresql/data
       - ./docker/reports-postgres/001_saved_reports.sql:/docker-entrypoint-initdb.d/001_saved_reports.sql:ro
       - ./docker/reports-postgres/002_vectors.sql:/docker-entrypoint-initdb.d/002_vectors.sql:ro
+      - ./docker/reports-postgres/003_user_memory.sql:/docker-entrypoint-initdb.d/003_user_memory.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "PGPASSWORD=local-reports-demo psql -h 127.0.0.1 -U retail_agent -d retail_agent -c 'SELECT 1 FROM saved_reports LIMIT 0' >/dev/null 2>&1"]
       interval: 5s

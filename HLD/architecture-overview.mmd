@@ -1,12 +1,16 @@
 flowchart LR
-    U["Executive / CLI"] --> APP["Chat Application"]
-    APP --> AG["Agent Orchestrator"]
-    AG <--> LLM["Gemini API"]
-    AG <--> K["Golden Knowledge + Preferences"]
-    AG <--> QS["Governed Query Service"]
-    QS <--> DB[("BigQuery: TheLook")]
-    AG <--> REP[("Saved Reports")]
-    AG --> OUT["Checked Final Answer"]
+    U["Operator CLI - implemented prototype"] --> APP["main.py / AnalyticalAgent"]
+    ACCESS["Trusted startup manager-brand mapping"] --> APP
+    DOC["Optional style-only Google Doc"] --> APP
+    APP <--> LLM["Google Gemini API - remote"]
+    APP --> QS["QueryService: policy, scope, dry run, result guard"]
+    QS <--> BQ[("BigQuery TheLook - remote")]
+    APP <--> RM["Reports and user-memory modules"]
+    RM <--> PG[("reports-postgres: PostgreSQL 17 + pgvector")]
+    RM --> EMB["Google embedding API - remote"]
+    APP --> OUT["Guarded prose + checked tables"]
     OUT --> U
-    AG -.-> OBS["PII-safe Traces + Metrics"]
-    QS -.-> OBS
+    APP -.-> LOG["Allowlisted local JSON logs"]
+    APP -.-> LF["Optional local Langfuse - raw payload privacy gap"]
+    LF --> STORE[("Independent Langfuse storage stack")]
+    FUTURE["Golden retrieval, real login and production services: NOT implemented"]

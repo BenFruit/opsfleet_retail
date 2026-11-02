@@ -14,6 +14,7 @@ _FIELDS = (
     "validation_reason",
     "report_calls",
     "persona_version",
+    "memory_calls",
 )
 
 

@@ -15,7 +15,7 @@ budgets) remain structured runtime context. There is no template interpolation
 of document contents, no executable code and no credentials in the document.
 
 `llm/persona.py` fetches the configured Google document as plain text at the start
-of each accepted question, once per turn. All subsequent plan/query/report/model
+of each accepted question, once per turn. All subsequent plan/query/report/remember/model
 steps retain that immutable snapshot. Changes take effect on the NEXT question
 without restarting/redeploying the application. Existing reports are unchanged;
 opening a saved document prints its stored content, not a newly styled rewrite.
@@ -62,5 +62,7 @@ instruction management. Sensitive trace handling remains separately deferred.
   confirmation and latency before publishing. Prompt precedence alone is insufficient.
 
 Persona is global presentation configuration, NOT per-user preference memory and
-NOT system-level learning. User preferences and curated improvement loops remain
-separate requirements, with explicit precedence and review policies.
+NOT system-level learning. The user-memory MVP is now described in USER_MEMORY.md:
+current explicit requests override remembered style preferences, which override
+general persona defaults; mandatory safety/tool policy always wins. Curated
+system-level improvement remains a separate design requirement.
