@@ -6,7 +6,7 @@ from retail_agent.data.query_service import QueryResult, QueryServiceError
 from retail_agent.evaluation.answers import (
     DEFAULT_CASES, PARTIAL_MARKER, AnswerCase, JudgeVerdict, RecordingQueryService, check_case, summarize,
 )
-from retail_agent.security.query_scope import apply_brand_scope
+from retail_agent.sql.scope import apply_brand_scope
 from support.paths import REPO_ROOT
 
 

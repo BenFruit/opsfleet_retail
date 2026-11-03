@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from retail_agent.llm.embeddings import Embedder, EmbeddingError, vector_literal
-from retail_agent.safety.result_guard import ResultGuardError
+from retail_agent.safety.errors import ResultGuardError
 from retail_agent.settings import Settings
 
 

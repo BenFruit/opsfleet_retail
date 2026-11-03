@@ -224,7 +224,7 @@ configuration, chosen by evaluation, not hard-coded claims.
 **SQLGlot** parses and qualifies BigQuery SQL so policy is checked on resolved
 column lineage (which table and column each expression reads), not on keywords
 or output names. Version pinned via `uv.lock` and wrapped behind
-`sql_validator` / `query_scope`. In production the data layer (authorized views,
+`retail_agent/sql/` (`validator`, `scope`). In production the data layer (authorized views,
 row access policies) becomes the primary boundary and SQLGlot the second layer;
 forking or trimming the parser would add risk without benefit.
 

@@ -8,7 +8,7 @@ from retail_agent.golden.evaluate import best_threshold, score
 from retail_agent.golden.ingest import DEFAULT_BUCKET, bigquery_dry_run, ingest, load_bucket, plan_ingest
 from retail_agent.golden.models import GoldenError, GoldenTrio
 from retail_agent.golden.service import GoldenKnowledge, query_text
-from retail_agent.safety.sql_validator import validate_query
+from retail_agent.sql.validator import validate_query
 from support.paths import REPO_ROOT
 
 

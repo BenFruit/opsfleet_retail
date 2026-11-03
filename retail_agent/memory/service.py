@@ -6,7 +6,7 @@ import re
 from retail_agent.memory.intent import explicit_remember, memory_key
 from retail_agent.memory.models import MAX_ENTRIES, MAX_ENTRY_CHARS, RememberRequest, UserMemoryError
 from retail_agent.memory.repository import MemoryCapacityError
-from retail_agent.safety.result_guard import check_text
+from retail_agent.safety.sensitive_text import check_text
 
 
 logger = logging.getLogger(__name__)

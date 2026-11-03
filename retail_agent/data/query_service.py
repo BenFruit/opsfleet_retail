@@ -11,8 +11,8 @@ from uuid import uuid4
 
 from retail_agent.data.bigquery_runner import BigQueryRunner
 from retail_agent.data.errors import classify_backend_error
-from retail_agent.security.query_scope import apply_brand_scope
-from retail_agent.safety.sql_validator import SQLValidationError, validate_query
+from retail_agent.sql.scope import scope_query
+from retail_agent.sql.validator import SQLValidationError, validate_query
 
 
 logger = logging.getLogger(__name__)
@@ -190,15 +190,17 @@ class QueryService:
         try:
             tree = validate_query(sql)
             demographic = bool(tree.meta.get("demographic_subject"))
+            columns = tuple(tree.named_selects)
             context = {"tool": "sql", "executed_sql": tree.sql(dialect="bigquery")}
             if demographic:
                 context["demographic_policy"] = _DEMOGRAPHIC_POLICY
-            scoped_sql = apply_brand_scope(sql, minimum_cohort_size=self.limits.minimum_cohort_size)
+            # Read columns and context first: scoping rewrites the tree in place.
+            scoped_sql = scope_query(tree, minimum_cohort_size=self.limits.minimum_cohort_size)
         except SQLValidationError as error:
             raise QueryServiceError("invalid_sql", f"SQL rejected: {error}") from None
         except (ValueError, RecursionError):
             raise QueryServiceError("invalid_sql", "SQL is invalid or outside the supported safety policy.") from None
-        return _ValidatedQuery(scoped_sql, tuple(tree.named_selects), context, demographic)
+        return _ValidatedQuery(scoped_sql, columns, context, demographic)
 
     def _dry_run(self, scoped_sql: str, brands: tuple[str, ...], byte_limit: int) -> int:
         """Estimate the exact SQL and parameters that will run; refuse over-budget scans."""

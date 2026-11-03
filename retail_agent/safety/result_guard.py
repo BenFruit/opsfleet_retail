@@ -2,40 +2,17 @@
 
 import json
 import math
-import re
 from datetime import date, datetime, time
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
-from retail_agent.safety.demographic_sql import COHORT_COLUMN
-from retail_agent.data.query_service import QueryResult
-from retail_agent.safety.sql_validator import SQLValidationError, validate_query
+from retail_agent.safety.errors import ResultGuardError
+from retail_agent.safety.sensitive_text import check_text
+from retail_agent.sql.demographics import COHORT_COLUMN
+from retail_agent.sql.validator import SQLValidationError, validate_query
 
-
-class ResultGuardError(ValueError):
-    pass
-
-
-_EMAIL = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
-_PHONE_CANDIDATE = re.compile(r"(?<!\w)\+\d[\d ()-]{6,}\d(?!\w)")
-# Analytical prose such as "+12 (2023-09-01 - 2023-09-30)" or "+3 (2024 - 2023)"
-# is not a phone number: exclude ISO dates and year ranges from candidates.
-_DATE_LIKE = re.compile(
-    r"(?:19|20)\d{2}-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?"
-    r"|(?:19|20)\d{2}\s*-\s*(?:19|20)\d{2}"
-)
-
-
-def _looks_like_phone(candidate: str) -> bool:
-    # E.164 numbers have at most 15 digits; real numbers have at least 10.
-    digits = sum(character.isdigit() for character in candidate)
-    return 10 <= digits <= 15 and not _DATE_LIKE.search(candidate)
-
-
-def check_text(text: str) -> str:
-    # Supplemental patterns, NOT comprehensive name/address/PII detection.
-    if _EMAIL.search(text) or any(_looks_like_phone(match.group()) for match in _PHONE_CANDIDATE.finditer(text)):
-        raise ResultGuardError("Text contains a potentially sensitive value")
-    return text
+if TYPE_CHECKING:  # Type only: the guard does not depend on the data layer at runtime.
+    from retail_agent.data.query_service import QueryResult
 
 
 def _scalar(value):
@@ -52,7 +29,7 @@ def _scalar(value):
     raise ResultGuardError("Only scalar query results are supported")
 
 
-def make_observation(sql: str, result: QueryResult, *, max_chars: int) -> dict:
+def make_observation(sql: str, result: "QueryResult", *, max_chars: int) -> dict:
     """Service-owned columns/context are not supplied by the model as proof."""
     minimum = result.minimum_cohort_size
     if minimum is not None and (type(minimum) is not int or minimum < 2 or not result.columns):

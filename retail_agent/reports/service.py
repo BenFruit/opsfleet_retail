@@ -7,7 +7,7 @@ from time import monotonic
 from uuid import uuid4
 
 from retail_agent.reports.models import MAX_DELETE_IDS, ReportError, ReportOperation, ReportRequest
-from retail_agent.safety.result_guard import check_text
+from retail_agent.safety.sensitive_text import check_text
 
 
 logger = logging.getLogger(__name__)

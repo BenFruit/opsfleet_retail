@@ -222,10 +222,24 @@ schemas unchanged):
   so they need only `GEMINI_API_KEY`. The sensitive-text check stays in
   `embed()` (last step before an external API), now with a test that such text
   never reaches the SDK. 284 tests pass.
-- **K. SQL policy package.** `retail_agent/sql/` with `validator.py` (validate
-  once; forbidden node types as a table; table/column checks as functions),
-  `demographics.py` (`DemographicQuery` class, comment 7) and `scope.py` (brand
-  scope rewrite plus cohort guard; per-table predicates as a table; takes the
-  validated tree). `safety/` keeps output guards only: `result_guard.py`,
-  `sensitive_text.py` (`check_text`), `grounding.py`; `security/access.py`
-  stays. About 13 references in README/AGENTS/HLD are updated with it.
+- **K. SQL policy package.** Done:
+  - `retail_agent/sql/validator.py`: `validate_query` is a short pipeline;
+    node and table rules are ordered tables (`_NODE_RULES`, `_TABLE_RULES`),
+    column access levels are checked in `_reads_aggregate_only_columns`.
+  - `sql/demographics.py`: `DemographicQuery` (comment 7) with one method per
+    rule group; allowed source sets, join keys and order_items dimensions are
+    tables.
+  - `sql/scope.py`: `scope_query(tree)` scopes the already validated tree and
+    owns `add_cohort_guard`; per-table brand predicates are a dict over the four
+    catalog tables. QueryService now parses and validates SQL once (before it
+    was validated again inside `apply_brand_scope`); `apply_brand_scope(sql)`
+    remains for callers with only text (Golden dry run, tests).
+  - `safety/` keeps guards on outgoing data: `sensitive_text.py` (`check_text`),
+    `result_guard.py` (no runtime import of the data layer), `grounding.py`,
+    and `errors.py` (`ResultGuardError`, unchanged type for all callers).
+    `security/` keeps `access.py`.
+  - Equivalence: 104 SQL strings recorded from the test suite, Golden trios and
+    answer cases (58 valid, 46 rejected) give identical validation results,
+    error types and messages, and identical scoped SQL for cohort 5 and 6;
+    `QueryService` produces the same scoped SQL for all 58. Tests moved to
+    `tests/unit/sql/`. 284 tests pass.

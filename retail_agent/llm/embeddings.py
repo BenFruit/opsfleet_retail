@@ -10,7 +10,7 @@ from google import genai
 from google.genai import types
 
 from retail_agent.observability.tracing import trace_generation
-from retail_agent.safety.result_guard import check_text
+from retail_agent.safety.sensitive_text import check_text
 
 
 DIMENSIONS = 768

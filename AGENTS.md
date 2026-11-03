@@ -29,10 +29,15 @@ Reading order:
   the mandatory policy prompt is `llm/prompts/analyst_policy.md`.
 - `retail_agent/bootstrap.py`: agent wiring shared by the chat application and answer
   evaluation. `retail_agent/presentation.py`: user-facing Markdown rendering.
-- `retail_agent/data/`, `schema/`, `safety/`, `security/`: query execution
-  (`data/errors.py` maps BigQuery failures to stable safe codes),
-  curated source policy, SQL/result guards, `Entitlements` (loaded once at
-  startup, passed explicitly) and trusted brand rewriting.
+- `retail_agent/data/`: query execution (`data/errors.py` maps BigQuery failures
+  to stable safe codes). `schema/`: curated column policy catalog.
+- `retail_agent/sql/`: `validator.py` (may this SQL run), `demographics.py`
+  (`DemographicQuery` shape rules), `scope.py` (brand scope and cohort guard on the
+  validated tree; QueryService validates once).
+- `retail_agent/safety/`: guards on outgoing data, `sensitive_text.py` (`check_text`),
+  `result_guard.py`, `grounding.py`, shared `ResultGuardError` in `errors.py`.
+- `retail_agent/security/access.py`: `Entitlements` (loaded once at startup,
+  passed explicitly).
 - `retail_agent/storage/postgres.py`: one PostgreSQL connection factory shared by
   reports, memory and Golden; driver errors become a fixed `StorageError`.
 - `retail_agent/reports/`: parameterized repository and report lifecycle.

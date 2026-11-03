@@ -11,11 +11,12 @@ from retail_agent.data.bigquery_runner import BigQueryRunner, QueryExecution
 from retail_agent.data.query_service import QueryLimits, QueryResult, QueryService
 from retail_agent.llm.analyst import Analyst
 from retail_agent.llm.client import GeminiClient
-from retail_agent.safety.demographic_sql import COHORT_COLUMN
-from retail_agent.safety.result_guard import ResultGuardError, make_observation
-from retail_agent.safety.sql_validator import validate_query
+from retail_agent.sql.demographics import COHORT_COLUMN
+from retail_agent.safety.errors import ResultGuardError
+from retail_agent.safety.result_guard import make_observation
+from retail_agent.sql.validator import validate_query
 from retail_agent.schema.catalog import TABLE_POLICIES
-from retail_agent.security.query_scope import apply_brand_scope
+from retail_agent.sql.scope import apply_brand_scope
 from support.demo_access import DEMO_ENTITLEMENTS
 
 

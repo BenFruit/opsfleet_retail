@@ -1,1 +1,1 @@
-"""Deterministic checks applied before model-generated SQL can be used."""
+"""Guards on data leaving the application: sensitive text, query results, prose figures."""

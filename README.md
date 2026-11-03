@@ -278,8 +278,9 @@ retail_agent/agent/          LangGraph loop, actions, budgets, grounding check
 retail_agent/llm/            Gemini client (retry/fallback), error classification, embedder, analyst, persona style
 retail_agent/llm/prompts/    mandatory analyst policy and default presentation style (plain text, reviewed as prose)
 retail_agent/data/           BigQuery runner, QueryService (dry run, caps) and safe BigQuery error codes
-retail_agent/safety/         SQL policy, demographic shapes, result guard, numeric grounding
-retail_agent/security/       brand entitlements and per-table scope rewriting
+retail_agent/sql/            SQL validation, demographic shapes, brand-scope and cohort rewriting
+retail_agent/safety/         guards on outgoing data: sensitive text, result guard, numeric grounding
+retail_agent/security/       trusted manager-to-brand entitlements
 retail_agent/schema/         column policy catalog (allowed / aggregate-only / blocked PII / blocked unscoped)
 retail_agent/storage/        shared PostgreSQL connection factory
 retail_agent/reports/        saved reports, deletion preview/confirm

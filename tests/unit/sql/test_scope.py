@@ -5,8 +5,8 @@ import unittest
 
 from sqlglot import exp, parse_one
 
-from retail_agent.safety.sql_validator import validate_query
-from retail_agent.security.query_scope import apply_brand_scope
+from retail_agent.sql.validator import validate_query
+from retail_agent.sql.scope import apply_brand_scope
 
 
 DATASET = "bigquery-public-data.thelook_ecommerce"

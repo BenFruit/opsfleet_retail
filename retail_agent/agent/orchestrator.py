@@ -24,7 +24,9 @@ from retail_agent.memory.models import UserMemoryError
 from retail_agent.observability.tracing import get_callbacks
 from retail_agent.reports.models import ReportError
 from retail_agent.presentation import render_reports
-from retail_agent.safety.result_guard import ResultGuardError, check_text, make_observation
+from retail_agent.safety.errors import ResultGuardError
+from retail_agent.safety.result_guard import make_observation
+from retail_agent.safety.sensitive_text import check_text
 
 
 logger = logging.getLogger(__name__)

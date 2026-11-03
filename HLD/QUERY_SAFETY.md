@@ -18,14 +18,14 @@ it is historical reference, not current source or a production security proof.
 
 ## Shared SQL boundary
 
-`safety/sql_validator.py` parses one read-only SELECT/set query, qualifies columns
+`sql/validator.py` parses one read-only SELECT/set query, qualifies columns
 against the policy catalog using SQLGlot and rejects unknown sources, direct PII
 anywhere, DML/DDL, wildcard projections, external/UDF/identity functions, custom
 parameters and unsupported source modifiers. Aliases do not change column policy.
 `orders.num_of_item` has the `blocked_unscoped` policy because a whole-order
 count can include unauthorized brands; the catalog, not special cases, blocks it.
 
-`security/query_scope.py` replaces every physical source with an authorized-brand
+`sql/scope.py` replaces every physical source with an authorized-brand
 relation, including sources inside ordinary CTEs/subqueries. Only approved source
 columns are projected; aggregate-only columns are included only after demographic
 shape validation succeeds. Brand ARRAY parameters come from trusted identity,
@@ -33,7 +33,7 @@ not model text. A visible customer does not unlock their other purchases.
 
 ## Demographic SQL: supported shape, not unrestricted SQL
 
-`safety/demographic_sql.py` applies when any source column is AGGREGATE_ONLY:
+`sql/demographics.py` (`DemographicQuery`) applies when any source column is AGGREGATE_ONLY:
 
 - One flat aggregate SELECT; no CTEs/subqueries/set operations/windows, grouping
   sets/rollups or SELECT DISTINCT in this subset.

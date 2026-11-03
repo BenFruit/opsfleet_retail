@@ -7,7 +7,7 @@ from retail_agent.reports.models import ReportError, ReportRequest
 from retail_agent.reports.repository import ReportRepository
 from retail_agent.presentation import render_reports
 from retail_agent.reports.service import ReportLibrary
-from retail_agent.safety.result_guard import ResultGuardError
+from retail_agent.safety.errors import ResultGuardError
 from retail_agent.security.access import Entitlements
 from support.demo_access import DEMO_ENTITLEMENTS
 

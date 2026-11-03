@@ -18,9 +18,10 @@ from pydantic import ValidationError
 from retail_agent.golden.models import GoldenError, GoldenTrio
 from retail_agent.llm.embeddings import EmbeddingError
 from retail_agent.storage.postgres import StorageError
-from retail_agent.safety.result_guard import ResultGuardError, check_text
-from retail_agent.safety.sql_validator import SQLValidationError
-from retail_agent.security.query_scope import apply_brand_scope
+from retail_agent.safety.errors import ResultGuardError
+from retail_agent.safety.sensitive_text import check_text
+from retail_agent.sql.validator import SQLValidationError
+from retail_agent.sql.scope import apply_brand_scope
 
 
 DEFAULT_BUCKET = Path("golden/trios")

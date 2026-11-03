@@ -4,8 +4,10 @@ from decimal import Decimal
 
 from retail_agent.data.query_service import QueryResult
 from retail_agent.presentation import remove_markdown_tables, render_observation
-from retail_agent.safety.result_guard import ResultGuardError, check_text, make_observation
-from retail_agent.safety.sql_validator import validate_query
+from retail_agent.safety.errors import ResultGuardError
+from retail_agent.safety.result_guard import make_observation
+from retail_agent.safety.sensitive_text import check_text
+from retail_agent.sql.validator import validate_query
 
 
 SQL = "SELECT p.name FROM `bigquery-public-data.thelook_ecommerce.products` AS p"
@@ -102,7 +104,7 @@ class ResultGuardTests(unittest.TestCase):
             )
 
     def test_unnamed_computed_columns_get_stable_aliases(self):
-        from retail_agent.safety.sql_validator import validate_query
+        from retail_agent.sql.validator import validate_query
         tree = validate_query("SELECT COUNT(*) FROM `bigquery-public-data.thelook_ecommerce.products` AS p")
         self.assertEqual(len(tree.named_selects), 1)
         self.assertTrue(tree.named_selects[0])
