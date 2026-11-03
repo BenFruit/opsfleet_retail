@@ -1,307 +1,524 @@
-# Production HLD — proposed target, not deployed
+# OpsFleet Retail Analyst: High-Level Design
 
-## 1. Scope and implementation boundary
+A chat agent that lets non-technical retail executives ask analytical questions
+about sales and performance, discuss the answers, and turn them into reports with
+action items. This document is the main design deliverable: architecture, data
+flow, technology choices, how each requirement is met, error handling and the
+path from the working prototype to production.
 
-The audience is nontechnical retail executives asking multi-step analytical
-questions over `bigquery-public-data.thelook_ecommerce`: orders, order_items,
-products and users. The goal is evidence-backed reports with actionable hypotheses,
-not unsupported causal certainty. See task.txt and STAKEHOLDER_POLICY.md.
+**Status labels used throughout:** **Implemented** = runs in the prototype in this
+repository and is covered by tests or live runs; **Production** = proposed design,
+not deployed. Setup and an example session are in the [README](../README.md).
 
-| Requirement | Current prototype | Production target |
-| --- | --- | --- |
-| Hybrid intelligence | 12 reviewed trios, validated hash-based ingestion into pgvector, thresholded hybrid retrieval before planning, retrieval eval (GOLDEN_KNOWLEDGE.md) | Cloud Storage bucket, PR-reviewed publishing job, tenant filters, reranker, feedback-driven trio promotion |
-| Safety/access | AST validation, brand rewriting, demographic contributor checks, result guards | Authenticated identity, data-layer isolation, privacy controls and adversarial validation |
-| Destructive operations | Frozen preview IDs, separate exact confirmation, transactional owner/brand recheck | Durable signed confirmation, idempotency and audit |
-| User learning | Explicit short memories with embeddings and full bounded context | Consent-aware selective retrieval and correction lifecycle |
-| System learning | Tests and manual prompt changes | Reviewed offline improvement and staged release |
-| Resilience | Bounded repairs/costs, safe errors, optional-service degradation | Deadlines, cancellation, admission control, outage isolation |
-| QA/UX | 236 tests, retrieval eval, 15-case live answer eval with reference SQL, numeric grounding and LLM judge, Golden A/B (EVALUATION.md) | 100-300 stratified cases, repeated runs, calibrated judge, usability studies, release gates |
-| Observability | Safe JSON logs; optional raw local Langfuse | Sanitized traces, dashboards, SLOs and alerts |
-| Persona agility | Style-only public-link Google Doc | Authenticated versioned admin console and rollback |
+| # | Requirement | Prototype | Where |
+| --- | --- | --- | --- |
+| 1 | Hybrid intelligence (Golden bucket) | Implemented: 12 reviewed trios, ingestion, retrieval, evaluation | [§5.1](#51-hybrid-intelligence-golden-knowledge), [GOLDEN_KNOWLEDGE.md](GOLDEN_KNOWLEDGE.md) |
+| 2 | Safety and PII masking (required in prototype) | Implemented: lineage-level SQL policy, brand scoping, cohort suppression, result guards | [§5.2](#52-safety-pii-and-access), [QUERY_SAFETY.md](QUERY_SAFETY.md) |
+| 3 | Destructive operations (required in prototype) | Implemented: frozen preview + separate `/confirm` | [§5.3](#53-high-stakes-oversight-report-deletion), [SAVED_REPORTS.md](SAVED_REPORTS.md) |
+| 4 | Learning loop | User level implemented (explicit memory); system level: reviewed path demonstrated, automation proposed | [§5.4](#54-continuous-improvement), [USER_MEMORY.md](USER_MEMORY.md) |
+| 5 | Resilience (required in prototype) | Implemented: bounded SQL repair, model retry + fallback, graceful degradation | [§5.5](#55-resilience-and-error-handling) |
+| 6 | Quality assurance | Implemented: 241 tests, retrieval eval, live answer eval with A/B | [§5.6](#56-quality-assurance), [EVALUATION.md](EVALUATION.md) |
+| 7 | Observability (required in prototype) | Implemented: correlated JSON events, metrics report, per-turn timeline, optional Langfuse | [§5.7](#57-observability), [OBSERVABILITY_AND_ACCESS.md](OBSERVABILITY_AND_ACCESS.md) |
+| 8 | Persona management | Implemented: style-only Google Doc, refreshed per question | [§5.8](#58-persona-management), [PERSONA_MANAGEMENT.md](PERSONA_MANAGEMENT.md) |
 
-Mandatory prototype requirements are implemented to the documented limited scope,
-not certified production security. Read HANDOFF.md for known observed failures.
+## 1. Scope and assumptions
 
-## 2. Services and technology choices
+- **Users:** executives and brand managers. Each manager may analyze only the
+  brands they are entitled to (stakeholder decision: brand is the access
+  dimension; a mock manager-to-brand mapping is acceptable for the prototype).
+- **Data:** `bigquery-public-data.thelook_ecommerce` tables `orders`,
+  `order_items`, `products`, `users`, read-only. The schema is fixed; brand scope
+  is applied per table, not per dataset.
+- **PII rules (confirmed with Harry and Vlad, [STAKEHOLDER_POLICY.md](STAKEHOLDER_POLICY.md)):**
+  names, email, street address, postal code and coordinates never reach the model
+  or the output; age, gender, city, state, country and traffic source only in
+  aggregates; customers may be referred to by `user_id`; filtering on a
+  demographic and then listing individuals is blocked; small demographic groups
+  are suppressed (configurable minimum, default 5 distinct buyers).
+- **Business defaults:** revenue = `SUM(order_items.sale_price)` for status
+  `Complete`; estimated gross profit = `sale_price - products.cost` (current
+  catalog cost); "last month" = the previous full calendar month. Golden trios
+  carry these definitions so they are applied consistently.
+- **Not in scope of the prototype:** real authentication, a web UI, multi-tenant
+  deployment. The CLI uses a trusted startup identity (`--manager`).
 
-Use one modular Python application on **Cloud Run** behind an authenticated HTTPS
-API; retain the CLI as a client and add a web client only when needed. LangGraph
-expresses explicit bounded transitions and supports testing; it is not an access
-control or correctness mechanism. Direct Gemini SDK avoids another model abstraction
-for the current Google-only prototype. The developer should state their own framework
-experience in the submission; repository documentation cannot invent it.
+## 2. Architecture
 
-Production identities come from the organization's OIDC identity provider through
-an authenticated gateway/application middleware. An authoritative tenant/brand
-entitlement provider supplies trusted scope. Never accept manager/brand claims from
-the model, prompt or client. Keep authorization in the application and enforce it
-again through reviewed BigQuery authorized views, row policies or entitlement-table
-joins compatible with the chosen identity architecture. A shared service account
-alone does not magically enforce individual-user row access.
+### 2.1 Production serving architecture (Production)
 
-Use **BigQuery** for read-only analytical execution: existing data locality, dry runs,
-job IDs/cancellation and billed-byte limits. Govern business metrics in curated
-views/definitions. Use separate least-privilege service accounts and avoid raw PII
-access when safe views suffice. The prototype ADC credential can have broader
-permissions; SQL validation is currently the application read-only boundary.
+```mermaid
+%% PROPOSED production serving architecture on Google Cloud (online path).
+%% Offline Golden ingestion, evaluation gates and feedback mining: learning-loop.mmd.
+%% The prototype implements the agent runtime, typed tools, BigQuery path and
+%% PostgreSQL stores locally behind a CLI with a trusted startup identity.
+flowchart TB
+    subgraph Clients["Clients"]
+        CLI["CLI (prototype)"]
+        WEB["Web or Slack client"]
+    end
 
-Use a tested **Gemini model on Vertex AI** for managed production IAM/region controls;
-the MVP uses AI Studio with `GEMINI_MODEL` explicitly configured. Benchmark supported
-model versions rather than hard-code a claim that a model is newest/best. Keep
-generation and embedding model/version separately recorded. Validate availability,
-contractual retention and regional processing before migrating provider endpoints.
+    subgraph Edge["Edge and identity"]
+        LB["HTTPS Load Balancer + Cloud Armor"]
+        IDP["IAP / OIDC: company IdP"]
+    end
 
-Use **Cloud SQL PostgreSQL with pgvector** for reports, memory, durable sessions,
-confirmation state, idempotency and knowledge-index metadata. It fits transactions
-and the modest initial vector corpus without an extra vector service. Current local
-DB has reports/memory only. Add owner/tenant policies and validate connection pooling,
-private connectivity, HA, backups and point-in-time restore. Qdrant is an alternative
-only if measured scale/features justify another operational dependency.
+    subgraph Run["Cloud Run service: stateless, autoscaled"]
+        API["Chat API: identity, session, streaming, rate limits"]
+        AGENT["Agent runtime: LangGraph loop, budgets, numeric grounding"]
+        TOOLS["Typed tools: QueryService, Reports, Memory, Golden retrieval; later Charts, Email, Web search"]
+    end
 
-Use **Cloud Storage** for immutable versioned Golden Knowledge artifacts/evaluation
-snapshots; **Cloud Run Jobs** for controlled ingestion/evaluation; a **Cloud Tasks**
-queue for bounded asynchronous indexing/export jobs. These are proposed, not needed
-to run the CLI. Use Secret Manager, managed TLS and Cloud Monitoring/Logging;
-sanitized OpenTelemetry/Langfuse can provide model-step drilldown. No Kubernetes,
-multi-agent fleet or mandatory Redis service is needed for the application MVP.
+    subgraph AI["Vertex AI"]
+        GEM["Gemini planner + fallback model"]
+        EMB["Gemini embeddings"]
+    end
 
-## 3. Online data flow and trust boundaries
+    subgraph Data["Data stores"]
+        BQ[("BigQuery TheLook: authorized views, row access by brand")]
+        PG[("Cloud SQL PostgreSQL + pgvector: sessions, confirmations, reports, memory, Golden index, persona versions")]
+        ENT[("Entitlements: manager to brands")]
+        SEC["Secret Manager"]
+    end
 
-1. Authenticate the user and resolve current tenant/brands outside model context.
-   Validate input length/sensitivity and create request/trace/session IDs.
-2. Snapshot mandatory policy, schema/metric versions, approved persona and selected
-   owner memory. Fetch authorized Golden candidates before planning. Treat every
-   retrieved field as data, not executable instructions.
-3. Plan one typed action at a time: query, report, remember or answer. Future tools
-   receive their own typed payloads, permissions, budgets and confirmation policy.
-4. SQL passes source/column/AST policy, trusted scope rewriting, demographic
-   contributor checks, dry run and execution bounds. The model never receives raw
-   prohibited source columns. Sanitize/bound results before model observations.
-5. Explain findings using checked evidence, explicit date/status/grain/formula,
-   uncertainty and proposed validation/actions. Show checked tables separately.
-6. Save only on explicit request; use parameterized library operations, not LLM SQL.
-   Refresh entitlements for opening/searching/deleting historical reports.
-7. Emit sanitized operational metadata and bounded reviewed evaluation samples.
+    subgraph Ops["Observability"]
+        LOGS["Cloud Logging: allowlisted JSON events, sink to BigQuery"]
+        TRACE["OpenTelemetry: Cloud Trace / Langfuse, redacted"]
+        MON["Cloud Monitoring: SLOs, alerts"]
+    end
 
-Question/history/profile/checked results and embedding text leave the host for Google
-in the MVP. Local pgvector/Langfuse does not make inference offline. Classify and
-minimize business data sent to providers as well as direct PII. Model-generated SQL
-may reference forbidden data before rejection, so rejected actions must also be
-sanitized before telemetry export.
+    PERSONA["Persona console: draft, preview, publish, rollback"]
 
-## 4. Golden Knowledge: format, ingestion and retrieval
-
-The prototype implements the core of this section; see GOLDEN_KNOWLEDGE.md for the
-actual trio format, ingestion job, retrieval parameters and calibration results.
-The example below is the fuller production artifact.
-
-Golden Knowledge is a reviewed reusable analytical method, not a cache of universally
-true historical answers. Store one immutable JSON artifact per version, for example:
-
-```json
-{
-  "id": "brand-monthly-margin",
-  "version": 1,
-  "status": "approved",
-  "question": "Which authorized brands drove completed gross profit last month?",
-  "sql_template": "<reviewed read-only SQL with documented date parameters>",
-  "analyst_report": "<sanitized example with evidence, caveats and next actions>",
-  "metric_definitions": ["completed_item_revenue", "estimated_gross_profit"],
-  "grain": "brand by complete calendar month",
-  "schema_version": "thelook-policy-v1",
-  "visibility": "shared-sanitized",
-  "tags": ["brand", "margin", "monthly"],
-  "reviewer": "<reviewer-id>",
-  "approved_at": "<UTC timestamp>",
-  "provenance": "synthetic-reviewed"
-}
+    CLI --> LB
+    WEB --> LB
+    LB --> IDP --> API
+    ENT -->|"trusted brand scope"| API
+    SEC -.->|"keys, DB credentials"| API
+    API --> AGENT
+    AGENT <-->|"JSON actions, Pydantic-validated, retry + fallback"| GEM
+    AGENT --> TOOLS
+    TOOLS -->|"AST-validated, brand-scoped SQL, dry run, byte caps"| BQ
+    ENT -->|"row access policy"| BQ
+    TOOLS <-->|"parameterized SQL, owner-scoped"| PG
+    TOOLS -->|"query embeddings"| EMB
+    PERSONA -->|"versioned style, no redeploy"| PG
+    AGENT -.->|"events"| LOGS
+    AGENT -.->|"spans"| TRACE
+    LOGS --> MON
 ```
 
-Additional metadata includes applicable tenant/brands for restricted examples,
-artifact hash, source/evidence freshness, model/embedding version and superseded-by.
-Do not publish private tenant facts under a shared example. Synthetic/AI-generated
-samples are permitted by stakeholder clarification but must be labeled and reviewed.
+| Building block | Service | Why |
+| --- | --- | --- |
+| Edge and identity | HTTPS Load Balancer, Cloud Armor, IAP/OIDC | Company SSO; identity and entitlements never come from the chat or the model |
+| Chat API + agent runtime | Cloud Run (one container, stateless) | Scales to zero, per-request concurrency, simple deploys; the agent loop is short and I/O-bound |
+| Planner and embeddings | Vertex AI Gemini (+ fallback model), Gemini embeddings | Same models as the prototype; Vertex adds IAM, regional processing and quotas per project |
+| Analytical data | BigQuery with authorized views / row access policies by brand | Data already lives there; dry runs, byte caps and job IDs give cost control and cancellation |
+| Application state | Cloud SQL PostgreSQL + pgvector | Reports, memory, sessions, pending confirmations, Golden index and persona versions need transactions; pgvector avoids a separate vector service at this scale |
+| Golden bucket | Cloud Storage (versioned) + pull-request review | Immutable trio versions and audit trail; ingestion publishes into pgvector |
+| Secrets | Secret Manager | API keys and DB credentials out of images and config |
+| Observability | Cloud Logging (sink to BigQuery), OpenTelemetry to Cloud Trace or Langfuse, Cloud Monitoring | Metadata events for metrics/alerts; redacted traces for deep dives |
+| Offline jobs | Cloud Run Jobs, Cloud Build, Cloud Scheduler | Golden ingestion, evaluation gates, feedback mining ([§5.4](#54-continuous-improvement)) |
 
-Ingestion validates schema, sanitization, metric/grain/date assumptions, SQL safety
-and reviewer approval. Store the immutable artifact in Cloud Storage; index concise
-question/method text and metadata in pgvector. Publish the new active index version
-atomically only after evaluation. Withdraw stale/bad entries and keep audit history.
-Do not silently re-embed with a different model; version/rebuild the index.
+### 2.2 One question, end to end (Implemented, except the API hop)
 
-At query time, filter authorized tenant/visibility and compatible schema/metrics
-**before ranking**. Hybrid lexical/vector retrieval selects candidates; rerank a
-small set, use relevance thresholds and bounded top-k (initial proposal: up to 3).
-Mount excerpts with IDs/versions and provenance within a token budget. Historical
-numbers are examples, not current facts. Rebind current dates/brands and revalidate
-generated SQL through the same execution boundary. Never execute a retrieved SQL
-template verbatim merely because it was reviewed for another scope.
+```mermaid
+%% One analytical question end to end. Implemented in the prototype except the
+%% API/identity hop (the CLI uses a trusted startup identity instead).
+sequenceDiagram
+    autonumber
+    actor U as Executive
+    participant API as Chat API / CLI
+    participant A as Agent (LangGraph)
+    participant K as Golden retrieval
+    participant G as Gemini
+    participant Q as QueryService
+    participant BQ as BigQuery
+    participant PG as PostgreSQL + pgvector
 
-If retrieval is unavailable or low-confidence, continue with schema/approved metric
-definitions and disclose limitations or ask for clarification; do not fabricate an
-expert precedent. Track retrieval precision/recall@k and downstream utility separately.
+    U->>API: question
+    API->>A: question + trusted brands (never from the model)
+    A->>A: input checks, cancel pending deletion, snapshot persona version
+    A->>PG: load user preferences (owner-scoped)
+    A->>K: retrieve precedents
+    K->>G: embed question
+    K->>PG: vector + lexical search, threshold 0.65, top 3
+    K-->>A: reviewed trios (or none if unavailable)
+    loop until answer or budget stop (7 model calls, 5 SQL, 300 MB)
+        A->>G: schema, history, observations, precedents, budgets
+        G-->>A: one JSON action (query, report, remember or answer)
+        alt query
+            A->>Q: SQL
+            Q->>Q: SQLGlot policy: no PII columns, aggregate-only demographics
+            Q->>Q: rewrite every table to authorized brands, add cohort guard
+            Q->>BQ: dry run, then capped execution (job id, timeout)
+            BQ-->>Q: rows
+            Q->>A: result guard: shape, scalars, size, cohort check
+            A->>A: observation, or safe error and repair (initial + 2)
+        else answer
+            A->>A: numeric grounding of prose figures
+            opt ungrounded figures
+                A->>G: feedback "compute totals with a query" (one correction)
+            end
+        end
+    end
+    A->>A: append authoritative checked tables, scope line
+    A-->>API: answer (+ "Method: trio vN" when a precedent was used)
+    A--)PG: nothing is written unless the user asked to save or remember
+    API-->>U: answer
+    Note over A: every step logs turn_id/query_id events, optional trace spans
+```
 
-## 5. Memory, persona and reviewed system learning
+1. The trusted identity resolves to authorized brands before anything else; the
+   model only ever sees them as information.
+2. Per turn, the agent snapshots the persona version, loads the user's
+   preferences and retrieves up to three Golden precedents.
+3. The planner returns exactly one JSON action per step (`query`, `report`,
+   `remember`, `answer`), validated by Pydantic. Invalid output gets up to two
+   corrections before any tool runs.
+4. A `query` passes the SQL policy, is rewritten so every physical table is
+   restricted to the authorized brands, gets a cohort guard if it touches
+   demographics, is dry-run against a byte cap and then executed with a timeout.
+   Rows pass the result guard before the model sees them.
+5. Failed SQL returns a safe reason and the attempted SQL for repair (initial
+   attempt plus two repairs). The loop is bounded per turn: 7 model calls, 5 SQL
+   attempts, 300 MB of scanned bytes.
+6. The final prose is checked for ungrounded figures, then the app appends the
+   authoritative checked tables itself. Nothing is persisted unless the user asked
+   to save a report or to remember a preference.
 
-These are three independent mechanisms:
+### 2.3 Prototype vs production
 
-- **User memory:** explicit owner-specific preference/profile consent; current MVP
-  loads all max-20 entries. Production adds pinned preferences plus budgeted relevant
-  long-tail retrieval, TTL/provenance, inspection, correction/supersession and deletion.
-  Similarity only proposes duplicates; it cannot merge contradictions safely.
-- **Persona:** global presentation configuration, never authorization/policy. Proposed
-  admin UI supports editor/reviewer roles, drafts, preview on fixed examples,
-  validation, versioned publish/rollback and audit. Snapshot one version per turn;
-  retain last-good configuration during outages. Google Doc is the current MVP only.
-- **System learning:** no online autonomous prompt/model rewriting. Capture consented,
-  sanitized failure/feedback candidates, cluster recurring issues, and have analysts
-  review corrected question/SQL/report trios or metric/prompt changes. Version the
-  resulting artifacts, run held-out regression/safety/UX checks, then approve a
-  staged release. Monitor canary quality and roll back by version on regressions.
+| Concern | Prototype (local) | Production |
+| --- | --- | --- |
+| Client and identity | CLI, `--manager` + `access.local.json` | Web/Slack client, OIDC, entitlement service |
+| Runtime | `python main.py` on the host | Cloud Run service |
+| Models | AI Studio API key, `GEMINI_MODEL` + `GEMINI_FALLBACK_MODEL` | Vertex AI with service-account IAM |
+| Access enforcement | Application SQL rewriting with trusted brand parameters | Same, plus BigQuery authorized views / row access policies as a second layer |
+| State | PostgreSQL 17 + pgvector in Docker Compose | Cloud SQL with HA, backups, private IP |
+| Golden bucket | `golden/trios/*.json` in Git | Cloud Storage + PR review + ingestion job |
+| Observability | `logs/agent.jsonl`, metrics CLI, optional local Langfuse | Cloud Logging, Monitoring dashboards and alerts, redacted traces |
+| Persona | Public-link Google Doc (style only) | Authenticated persona console with versions |
 
-User likes are weak feedback, not proof of numerical correctness. Do not promote
-private memory, unverified model output or injected instructions into shared Golden
-Knowledge. Prevent tenant leakage and evaluation contamination. Fine-tuning or a
-distilled request classifier is optional after sufficient labeled evidence; neither
-replaces SQL/result/access controls. See REQUEST_SAFETY_CLASSIFIER.md.
+## 3. Technology choices
 
-## 6. Reports and high-stakes deletion
+**Python + direct Google Gen AI SDK.** Structured output with a JSON Schema
+generated from Pydantic, validated again locally; explicit timeouts, error
+classification and our own bounded retry/fallback policy. No LangChain wrappers
+between us and the model, so the request and its failure modes stay visible.
 
-Current save stores the previous completed answer plus checked tables and a trusted
-brand provenance scope. Search is owner/brand-scoped; semantic neighbors are discovery,
-not deletion selection. Literal matching/current-conversation/IDs/all scopes create
-a frozen maximum-100-ID preview. Exact `/confirm` within five minutes bypasses the
-LLM, rechecks access and deletes transactionally. Any new question/cancel/reset/restart
-cancels. Never report success after ambiguous commit errors. See SAVED_REPORTS.md.
+**LangGraph as a thin, explicit state machine.** Four nodes (`plan`, `query`,
+`reports`, `remember`) with conditional edges and a recursion limit. All business
+logic lives in plain Python classes (`QueryService`, `ReportLibrary`,
+`UserMemory`, `GoldenKnowledge`, validators), so the framework is replaceable.
+LangGraph's `interrupt()` + checkpointer was deliberately not used for deletion
+confirmation: confirmation must be a separate user command that never passes
+through model-driven state, and the CLI prototype has no session store. In
+production the pending confirmation is a server-side record ([§5.3](#53-high-stakes-oversight-report-deletion)).
 
-For distributed production, store pending scope/IDs/count/hash/owner/session/expiry
-server-side and issue a cryptographically bound single-use confirmation token.
-Recheck current entitlements and consume the token inside the deletion transaction;
-use an idempotency key and durable audit outcome. Do not expand the candidate set
-at confirmation time. Multiple batches need explicit previews; no hidden all-library
-expansion beyond the cap. Define retention/backup deletion separately from live-row
-deletion; backup expiry is not immediate physical erasure.
+**Gemini models.** A current Flash-Lite model as the planner: one question takes
+2-4 short structured calls, so latency and cost matter more than peak reasoning;
+the evaluation shows it is adequate when guided by Golden precedents. A stronger
+Flash model is configured as the fallback. `gemini-embedding-2` (768 dimensions)
+serves reports, memory and Golden retrieval with one vector space. Model IDs are
+configuration, chosen by evaluation, not hard-coded claims.
 
-## 7. Safety and remaining privacy risk
+**SQLGlot** parses and qualifies BigQuery SQL so policy is checked on resolved
+column lineage (which table and column each expression reads), not on keywords
+or output names. Version pinned via `uv.lock` and wrapped behind
+`sql_validator` / `query_scope`. In production the data layer (authorized views,
+row access policies) becomes the primary boundary and SQLGlot the second layer;
+forking or trimming the parser would add risk without benefit.
 
-Deterministic SQL guards and trusted scoping are implemented application boundaries;
-they are not a proof of anonymity or perfect parser coverage. Customer names/email/
-street/postal/precise location are prohibited; demographic attributes are aggregate-only.
-Stable IDs are permitted only for non-demographic analysis. Restrict joins and metric
-contributors, not merely output names. A demographic predicate followed by IDs leaks
-attributes even when those attributes are not selected.
+**PostgreSQL + pgvector** for all application state, including vectors: one
+transactional store, parameterized queries, owner scoping, and exact search that
+is fast at hundreds to thousands of rows.
 
-Current k suppression does not stop differencing across questions, auxiliary-knowledge
-attacks or all extreme-statistic inference. Proposed production choices include
-reviewed safe datasets/metrics, composition-aware query budgets, consistent suppression
-and differential privacy where utility/privacy needs justify it. These require explicit
-policy decisions and testing; do not imply they exist in the prototype.
+**Alternatives considered.**
+- *Google ADK*: strong for multi-agent systems and deployment to Vertex Agent
+  Engine. This problem is one agent with a tightly controlled loop and
+  deterministic safety steps, where an explicit graph is easier to reason about
+  and test. Because logic is framework-independent, moving to ADK on GCP later is
+  straightforward.
+- *LangChain SQL agents/toolkits*: hide the SQL execution path that the safety
+  design must control.
+- *Mem0 for user memory*: more than needed for short explicit preferences; Vlad
+  confirmed a lightweight module is fine.
+- *Qdrant / Vertex AI Vector Search*: justified only when measured corpus size or
+  latency requires a separate index.
 
-Keep schema, retrieved documents, persona, memory and tool results distinct from
-mandatory policy. Test indirect injection, encoded disclosure, malicious stored
-strings and tool/confirmation bypass. Free-text sensitive-data classification and
-safe telemetry need stronger controls than current email/phone regexes.
+**Experience.** My background is on-premise ML infrastructure: provisioning VMs
+from scratch and serving models, including vision-language models, on them. I
+use LangGraph comfortably and prefer to keep it thin, with logic in my own
+classes. SQLGlot was selected specifically for this task as the open-source parser that
+makes lineage-aware SQL validation possible. The GCP managed services above map directly onto
+infrastructure I have built and operated by hand.
 
-## 8. Reliability, budgets and failure handling
+## 4. Data: where it lives and how it is handled
 
-MVP defaults: 7 generative calls, 5 SQL attempts, 3 consecutive SQL failures (initial
-plus 2 repairs), 2 malformed-action corrections, 5 report calls, 1 memory write attempt
-and 300 MB scan accounting per turn. Per query: 100 MB billed bytes, 200 rows, 256 KB,
-30-second wait and 10-second API timeout. Gemini has 30-second HTTP timeout; SDK
-transport retries are disabled and the client retries transient planning failures
-once (bounded backoff/Retry-After <= 8 s), then optionally uses one configured
-fallback model. Retries are logged and do not consume the agent's 7-call budget.
-Embedding calls are separate from generative counters and are not retried.
+| Data | Store | Who can read/write | Notes |
+| --- | --- | --- | --- |
+| Transactions, products, customers | BigQuery (read-only) | Agent via QueryService only | Brand-scoped per table; PII columns blocked before execution |
+| Query observations | Process memory, then model context | Agent | Only result-guarded rows, max 200 rows / 256 KB per query |
+| Conversation history | Process memory (prototype); Cloud SQL sessions (production) | Agent | Bounded: 6 turns / 20,000 characters |
+| Saved reports | PostgreSQL `saved_reports` | Owner, if current brands cover the report's brands | Snapshot of the previous answer with checked tables; embedding for search |
+| User memory | PostgreSQL `user_memories` | Owner | Max 20 entries x 200 characters; explicit consent; `/forget` |
+| Golden index | PostgreSQL `golden_trios` | Agent: SELECT only; ingestion role: write | Rebuildable from the bucket |
+| Persona | Google Doc (prototype); Cloud SQL versions (production) | Admins edit; agent reads | Style only; mandatory policy stays in code |
+| Logs | `logs/agent.jsonl`; Cloud Logging | Operators | Allowlisted metadata fields: IDs, codes, counts, durations, tokens; no prompts, SQL or rows |
+| Traces (optional) | Local Langfuse; production redacted traces | Restricted | Prototype traces contain raw prompts: demo data only |
 
-Validation/syntax errors may get controlled bounded repair. Empty output may mean
-no data or privacy suppression: check supported filters/date assumptions without
-relaxing authorization or k. If unresolved, state no publishable result, not zero.
-Rate limits, authorization denials, unsafe results and ambiguous executions are not
-blindly replayed. Unknown execution billing reserves the ceiling. Budgets are not
-an account-wide cap or hard end-to-end deadline.
+**What leaves the trust boundary:** questions, result-guarded rows, report text,
+memory entries and trio text are sent to Google (Gemini, embeddings). Direct PII
+never is, because it is blocked at the SQL level before execution.
 
-Production adds request deadlines, cancellation propagated to BigQuery jobs,
-concurrency/admission quotas and per-tenant cost controls. Retry only explicitly
-safe/idempotent transient reads with bounded jitter/backoff and Retry-After; use
-circuit breakers and provider outage alerts. Never fail open on authorization.
-Memory/persona/Golden outages can degrade to marked-empty/default context; reports
-outage leaves analysis available but cannot claim saves/deletes succeeded. Durable
-job IDs/idempotency let operators resolve uncertain outcomes before retrying.
+## 5. Requirements
 
-## 9. Evaluation and UX release gates
+### 5.1 Hybrid intelligence: Golden Knowledge
 
-The prototype implements a first version of this section (retrieval evaluation,
-answer evaluation with reference numbers, grounding and a judge, and a Golden A/B);
-see EVALUATION.md for the method, results and findings.
+**Implemented.** A trio is a reviewed analytical method: question and
+paraphrases, the analyst's interpretation (definitions, period rules, pitfalls),
+metric formulas, grain, reviewed SQL and a report structure with
+`<placeholders>` instead of numbers, so examples are never mistaken for current
+data. Twelve trios cover the assignment's examples.
 
-Build a versioned dataset with questions, authorized scope, fixed data fixtures or
-snapshot dates, expected metrics/grain/status/date windows, acceptable SQL/result
-invariants, required caveats and prohibited outputs. Include ambiguous and multi-intent
-requests, follow-ups, absent data, mixed-brand baskets and adversarial prompts.
+- **Updating the bucket over time:** `python -m retail_agent.golden.ingest`
+  validates the whole bucket (the same SQL policy as model SQL; one bad trio
+  publishes nothing), optionally dry-runs every SQL in BigQuery, re-embeds only
+  changed trios by content hash, removes withdrawn ones and publishes in one
+  transaction under a separate writer role. Two trios were revised to v2 after
+  live runs exposed weak methods: the churn proxy and the quarterly totals.
+- **Providing it at query time:** before planning, the question (plus the
+  previous one for short follow-ups) is embedded, pgvector returns 10 candidates,
+  a lexical match breaks ties, a 0.65 similarity threshold and top-3 limit apply
+  within a prompt budget. Answers that follow a precedent end with
+  `Method: <trio_id> v<version>`. If retrieval fails, planning continues without it.
+- **Evidence:** retrieval recall@3 0.96 on 30 English/Russian cases; answer
+  evaluation judge pass rate 1.00 with Golden vs 0.60 without.
 
-Evaluate layers independently:
+**Production:** Cloud Storage bucket, PR review by a second analyst, CI ingestion
+and evaluation gate, tenant/visibility filters applied before ranking, a reranker
+for the 0.63-0.67 similarity overlap, trios promoted from flagged conversations.
 
-- Retrieval: relevance/recall@k, stale precedent use and unauthorized leakage.
-- SQL/result: execution success, scope isolation, reference numeric results,
-  contributor/privacy invariants and correct metric/time semantics. Equivalent SQL
-  is acceptable; string equality is not a semantic oracle.
-- Reports: answer coverage, numerical faithfulness, date/status/formula consistency,
-  uncertainty, actionability and unsupported causal claims. Combine deterministic
-  checks with blinded analyst rubric; calibrate any LLM judge against humans.
-- Memory/persona: complete fact extraction, explicit intent, negation, current-turn
-  precedence, conflicts, formatting adherence and owner isolation.
-- Failure/UX: controlled outages/timeouts, no duplicate writes, understandable no-data
-  messages, successful deletion confirmation/cancel and restoration after reset.
+### 5.2 Safety, PII and access
 
-Run all regressions in CI; use opt-in DB integration and a separately budgeted live
-smoke suite. Block releases on any critical privacy/access/confirmation regression.
-Proposed initial quality gate: >=90% analyst-approved intent/report cases on a
-held-out representative set, with zero critical safety violations; calibrate with
-stakeholders rather than claim an achieved score. Version model, prompt, policy,
-schema, persona and knowledge in every evaluation run.
+**Implemented**, as layers that do not trust each other ([security-pii.mmd](security-pii.mmd)):
 
-Test UX with representative nontechnical executives: ask them to perform analytical
-tasks and report search/delete flows without coaching. Measure completion rate,
-turns/time to useful answer, correction/abandonment, confirmation comprehension,
-perceived usefulness and calibrated trust. Do not reward confident wrong reports.
-Fresh-machine setup must be tested separately; 205 unit/integration tests do not
-establish portability or executive usability.
+1. **Input:** length limit; email/phone patterns rejected; CLI identity is
+   fixed at startup and brands come from trusted config, never from chat.
+2. **Column policy:** every column is `allowed`, `aggregate_only` or
+   `blocked_pii` in a curated catalog. Unknown columns fail closed.
+3. **SQL policy on resolved lineage (SQLGlot):** one read-only SELECT; no DML/DDL,
+   wildcards, UDFs, external or identity functions, parameters; blocked columns
+   rejected anywhere (select, filter, join, subquery, alias). This answers the
+   stakeholder note that keyword or column-name matching is not robust.
+4. **Demographic shape:** if any aggregate-only column is used, the query must be
+   one flat aggregate over canonical joins; individual IDs may not appear in
+   outputs, filters or groupings, so "IDs of 26-year-olds" and "age of our top
+   spender" are rejected.
+5. **Brand scoping:** every physical table, including inside CTEs and subqueries,
+   is replaced by a subquery filtered to the authorized brands with a trusted
+   BigQuery array parameter. Customer metrics therefore include only purchases of
+   authorized brands.
+6. **Cohort guard:** code adds a distinct-buyer count and `HAVING >= k` before
+   ORDER/LIMIT for demographic queries; results are re-checked and the counter
+   stripped. Product revenue with two buyers is allowed (no identities attached).
+7. **Result guard:** columns must match the validated projection; only scalars;
+   size bounds; contact-detail patterns rejected before the model sees anything.
+8. **Output:** text checks, numeric grounding, and app-rendered tables instead of
+   model-written ones. The model is instructed to answer only analysis questions;
+   off-topic and malicious requests are refused (verified in the answer eval).
 
-## 10. Observability and operations
+Prompt injection: question text, history, database strings, reports and trios are
+data. They cannot change access (the brand parameter is outside the model's
+reach) or confirm deletion (only a separate CLI command can).
 
-Production emits sanitized trace-linked events for request, planning, validation,
-dry run, execution, result checks, retrieval, report/memory operations and final answer.
-Record safe reason codes, stage duration, model/version, token/cost/scan accounting,
-repair counts, budget stops, empty/suppressed results and permission/confirmation
-outcomes. No raw PII, secrets, rejected SQL literals or profile text by default.
-Debug payload capture needs separate consent, restricted access and short retention.
+**Residual risk and production:** combining answers across questions
+(differencing) is not prevented, as agreed with Vlad. Production mitigations:
+authorized views as the primary boundary, per-user query budgets on demographic
+dimensions, consistent suppression, overlap detection between recent demographic
+queries, and differential privacy for high-risk aggregates where utility allows.
+Free-text PII detection beyond patterns (e.g. Cloud DLP) for inputs and traces.
 
-Dashboards track end-to-end p50/p95 latency, service/model error rates, SQL success
-and repair recovery, quality review scores, retrieval usefulness, memory failures,
-confirmation abandonment, cost per completed task and per-tenant usage. Distinguish
-handled error observations from infrastructure span status. Correlate by request/turn
-ID and policy/model versions, not personal identifiers. Alert on unusual denial/leakage
-signals, dependency failures, rising cost/repair rates and backup failures.
+### 5.3 High-stakes oversight: report deletion
 
-Proposed initial SLO discussion: 99.5% monthly request availability excluding explicit
-policy/user denials, and p95 <60 seconds for agreed single-query tasks under expected
-load. These are targets to load-test and negotiate, not current measurements; complex
-analyses need separate classes. Define error budget/incident ownership, runbooks,
-RPO/RTO through restore drills and retention/data residency with stakeholders.
+**Implemented** ([report-deletion.mmd](report-deletion.mmd)): "Delete all reports
+mentioning Client X" or "...made in this conversation" produces a **preview**
+(literal match, conversation, ID or all; never vector similarity), capped at 100
+and frozen as exact IDs for 5 minutes. Only a separate `/confirm` command deletes,
+bypassing the model, re-checking owner and current brands inside one transaction,
+and reporting the actual count. Any new question, `/cancel`, `/reset` or restart
+invalidates the preview; reports created after the preview are never included.
+UX stays fluent: the preview lists titles and IDs and says exactly what to type.
 
-Current Langfuse exports raw graph/model data when enabled; comprehensive redaction
-is deferred. Keep it demo-only until the export boundary is tested with sensitive
-canaries on success and failure paths. Logging outages must not break analysis.
+**Production:** pending confirmation stored server-side with a signed single-use
+token bound to user, session and the hash of the frozen IDs; idempotency key and
+audit record; UI confirmation button instead of a typed command.
 
-## 11. Rollout and extension
+### 5.4 Continuous improvement
 
-Start with the local reproducible CLI and reviewed evaluation examples. Validate a
-clean clone, then pilot authenticated read-only production analysis on safe views.
-Add durable reports/confirmation, reviewed knowledge retrieval and admin persona;
-roll out by tenant/canary with versioned rollback. Review privacy/export, restore,
-cost and load gates before expanding use.
+```mermaid
+%% Continuous improvement. User level: implemented (explicit memory).
+%% System level: the review/promotion path is implemented manually in the
+%% prototype (trio v2 after a failed live run); mining and automation are proposed.
+flowchart TB
+    subgraph User["User level: preferences"]
+        ASK["'Use bullet points, remember this'"] --> GATE1{"Explicit remember intent?"}
+        GATE1 -->|"no: one-off style"| ONCE["Apply to this answer only"]
+        GATE1 -->|"yes"| MEM[("Owner-scoped memory: max 20 short entries")]
+        MEM --> CTX["Loaded into every turn as preferences; never as permissions"]
+        CTX --> INSPECT["/memories, /forget ID, /forget-all"]
+    end
 
-Charts, email and web search are future typed adapters, not unrestricted model tools.
-Each needs explicit data classification, outbound destination controls, authorization,
-timeouts/budgets and relevant confirmation. Email/export is a data-disclosure operation;
-web content is untrusted and cannot change policy. Keep the orchestration modular
-without deploying a separate service for every action.
+    subgraph System["System level: methods and quality"]
+        SIG["Signals: thumbs-down, SQL repairs, empty results, ungrounded figures, eval failures"] --> QUEUE["Sanitized candidate queue"]
+        QUEUE --> ANALYST["Analyst writes or fixes a trio, or a prompt/metric rule"]
+        ANALYST --> PR["Pull request: review by a second analyst"]
+        PR --> INGEST["Golden ingest: policy validation, BigQuery dry run, re-embed changed only"]
+        INGEST --> EVAL["Retrieval + answer evaluation (A/B vs current release)"]
+        EVAL -->|"pass"| PUBLISH["Atomic index publish / canary release"]
+        EVAL -->|"fail"| ANALYST
+        PUBLISH --> AGENT["Agent retrieves the new version at query time"]
+        AGENT --> SIG
+    end
+
+    NOTE["No autonomous self-modification: the agent can read Golden Knowledge but never write it"]
+    NOTE -.-> AGENT
+```
+
+**User level (Implemented):** explicit `remember` intent (model action plus a
+code-level check for "remember"/"запомни") stores short preferences such as
+"prefers tables" or "brief answers", loaded into every turn as preferences, never
+as permissions. `/memories`, `/forget ID`, `/forget-all`. Known gaps: no
+supersession of conflicting preferences, no implicit learning of depth or format.
+**Production:** pinned preferences plus selective retrieval, conflict
+supersession, implicit preference proposals that the user confirms, TTLs.
+
+**System level:** the agent never modifies itself. Improvements flow through
+reviewed artifacts (trios, prompt rules, metric definitions) and an evaluation
+gate. Demonstrated manually in the prototype: live runs and the evaluation exposed
+two weak methods and a prose-arithmetic failure; trios were revised to v2, a
+grounding check was added, and the A/B evaluation confirmed the effect.
+**Production:** signals (thumbs-down, repairs, empty results, ungrounded figures,
+evaluation failures) feed a sanitized queue; analysts write or fix trios through
+pull requests; the ingest job and evaluation gate publish; canary and rollback.
+
+### 5.5 Resilience and error handling
+
+| Failure | Behaviour | Status |
+| --- | --- | --- |
+| SQL syntax/semantic error, policy rejection | Safe reason + attempted SQL back to the model; initial attempt + 2 repairs; then an honest partial answer with the last checked result | Implemented; 7/7 dry-run rejections recovered in the eval |
+| Empty result | Reported as "no publishable rows" (may be suppression), model may revise filters it invented, never the user's | Implemented |
+| Premature answer after only failures | Forced repair instead of an answer without evidence | Implemented |
+| Invalid JSON / action from the model | Up to 2 corrections before any tool runs | Implemented |
+| Gemini 503 / 429 / connection error | One retry with backoff or Retry-After (<= 8 s), then one call to the fallback model | Implemented; fallback answered 5 times during eval runs |
+| Gemini timeout, daily quota, model not found | Straight to the fallback model | Implemented |
+| BigQuery timeout, quota, outage | Stop that query (no blind replay of possibly-billed jobs), cancel job by ID, partial answer | Implemented |
+| Cost | Dry run vs per-query cap (100 MB billed), per-turn 300 MB, row and size caps; unknown billing reserves the ceiling | Implemented |
+| Ungrounded figures in prose | One SQL correction, otherwise a visible note | Implemented |
+| PostgreSQL, embeddings, persona, Golden, tracing down | Analysis continues; memory and Golden empty, last good persona; saves/deletes never claim success when unconfirmed | Implemented |
+| Startup misconfiguration | Failing stage and exception class printed and logged, never the exception text | Implemented |
+| UI | The CLI loop catches everything at its boundary; the user can always ask again | Implemented |
+
+**Production adds:** end-to-end request deadlines, circuit breakers per
+dependency, admission control and per-tenant quotas, idempotency keys on writes.
+
+### 5.6 Quality assurance
+
+**Implemented** ([EVALUATION.md](EVALUATION.md)): 241 unit/regression tests;
+retrieval evaluation (30 cases); live answer evaluation (15 cases: analytics,
+reports, UX, safety) with deterministic checks (reference numbers from reviewed SQL
+under the same brand scope, required and forbidden SQL, numeric grounding, PII,
+refusal and access patterns) plus an LLM judge for intent coverage, caveats and
+actionability. The judge missed a wrong prose total, so numeric faithfulness is
+checked in code. Golden on/off A/B: 15/15 vs 14/15 deterministic, 1.00 vs 0.60
+judge pass rate.
+
+**Production:** 100-300 stratified cases from real questions, repeated runs, judge
+calibrated against analysts, release blocked on any safety or reference failure,
+canary metrics. UX: moderated sessions with executives (task success, turns to a
+useful answer, understanding of the deletion preview, trust calibration) plus
+in-product feedback and implicit signals.
+
+### 5.7 Observability
+
+**Implemented.** Every component writes allowlisted JSON events to
+`logs/agent.jsonl` (no prompts, SQL, rows or exception text). Correlation keys:
+`turn_id` on every turn event, `query_id` + `turn_id` on every query event.
+
+Agent-level metrics, computed by `python -m retail_agent.observability.metrics`
+(values from the 60 evaluation turns):
+
+| Metric | Why | Eval value |
+| --- | --- | --- |
+| Partial answer rate | Turns ending in a controlled stop | 0.0 |
+| SQL first-attempt success, recovery after error | Planner quality, repair effectiveness | 0.82, 1.00 |
+| Failures by code and stage | Where queries break (validation, dry run, execution) | 7 x `query_rejected` at dry run |
+| Model failures, retries, fallbacks, answering model | Provider health and fallback use | 5 retries, 5 fallbacks |
+| Golden hit rate, top similarity, most used trios | Retrieval health and knowledge coverage | 0.87, p50 0.75 |
+| Ungrounded figures (repaired / noted) | Faithfulness risk | 3 repaired |
+| Latency p50/p95, model calls, SQL attempts, tokens, scanned MB per turn | UX and cost | 5.2 s / 10.5 s, 1.85, 0.8, 8.8k, 16 MB |
+| Report operations, confirmed deletions, dependency warnings | Destructive actions and degraded dependencies | per run |
+
+**Deep dive:** `--turn <turn_id>` prints the timeline of one turn (model calls
+with tokens and chosen action, each query's dry run, execution, row counts and
+failure stage, retrieval, grounding repairs). With Langfuse enabled the same
+`turn_id` opens the full trace with prompts and model outputs (demo data only,
+because traces are not redacted yet).
+
+**Production:** the same events to Cloud Logging with a BigQuery sink for these
+metrics as dashboard queries; alerts on partial-answer rate, model error/fallback
+rate, SQL recovery drop, p95 latency, cost per turn and any safety rejection
+spike; OpenTelemetry traces with field-level redaction and restricted access; SLO
+proposal: 99.5% availability, p95 under 30 s for single-query questions.
+
+### 5.8 Persona management
+
+**Implemented:** the editable part of the instructions (tone, structure,
+brevity) is a Google Doc fetched as plain text once per question; changes apply to
+the next question without redeploying. Mandatory policy (scope, SQL, PII, access,
+budgets, deletion) stays in code and overrides the style text. Failures keep the
+last good version; the version hash is logged.
+
+**Production:** a persona console for non-developers: structured fields
+(tone, length, format, audience) plus free text, preview on fixed questions,
+evaluation gate on tone adherence and numeric fidelity, versioned publish and
+rollback, audit log; the agent snapshots one version per turn.
+
+## 6. Extensibility: adding a capability
+
+New capabilities are typed tools, not free-form model powers:
+
+1. Define a Pydantic action (e.g. `chart`: chart type, the `query_id` of a checked
+   result, fields; `email`: report ID and recipients from an allowlist).
+2. Implement it as a service class with its own validation, budget and errors.
+3. Add a graph node and an edge from `plan`; add the action description to the
+   instructions.
+4. Decide its risk class: read-only (charts, web search) runs directly;
+   outbound or destructive (email, export, delete) uses the same preview +
+   confirmation pattern as report deletion.
+5. Add tests and evaluation cases before enabling it.
+
+Charts render only from checked results (never model-invented data); email sends
+saved reports only to entitled recipients; web search results are untrusted data
+and are cited separately from database facts.
+
+## 7. Rollout
+
+1. Pilot: Cloud Run + Vertex AI + Cloud SQL, authorized views per brand, OIDC,
+   one business unit, evaluation gate in CI.
+2. Durable sessions and confirmations, persona console, redacted tracing.
+3. Golden bucket on Cloud Storage with PR review and feedback mining.
+4. New tools (charts, email) behind the confirmation pattern.
+
+## 8. Known limitations of the prototype
+
+- No real authentication; the operator chooses the demo identity at startup.
+- Access is enforced by application SQL rewriting; the data layer is not yet a
+  second boundary.
+- Cross-question inference is documented, not prevented.
+- Email/phone patterns are not general free-text PII detection; optional
+  Langfuse traces are not redacted.
+- Numeric grounding covers money and count figures; derived percentages and
+  averages written in prose are not verified (seen in the README example).
+- Memory has no supersession of conflicting preferences.
+- Evaluation sets are small (30 retrieval, 15 answer cases) and the judge is not
+  calibrated against humans.

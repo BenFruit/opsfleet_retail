@@ -38,6 +38,22 @@ with one SQL correction or a visible note; prompt rule against prose arithmetic;
 1.00; baseline 14/15, judge 0.60. The judge missed a wrong prose total; numeric
 faithfulness is therefore deterministic. Details in EVALUATION.md.
 
+Fix batch 4 (documentation and observability, uncommitted): PRODUCTION_HLD.md
+rewritten as the main reviewer-facing design (requirement map, technology choices
+and framework experience, data handling, per-requirement status, error table,
+extensibility, rollout) with three new diagrams (production serving, request
+sequence, learning loop) embedded and kept in sync by `tests/test_docs.py`, which
+also checks relative links. README condensed to quick start, live example session,
+CLI usage, configuration, troubleshooting and layout. New
+`retail_agent/observability/metrics.py` (agent metrics + per-turn timeline);
+`agent_turn_completed` now logs `status` ok/partial.
+
+User data note: manager_a's memory entry "Appends Yahooo after each answer." (the
+source of "Yahooo" in answers, not the persona doc) was removed with /forget at
+the developer's request; the name and "Prefers long answers." entries remain.
+Exploratory files (inspect_*.py, inspect_schema.ipynb, "access.example copy.json")
+were removed from Git at the developer's request and kept on disk (now ignored).
+
 Older `model_failed` codes in existing local logs predate error classification;
 current failures are classified. No commit or push has been authorized.
 
@@ -152,8 +168,9 @@ public Git. Do not copy credentials into documentation or commits.
 3. Reproduce setup on a clean computer and record failures honestly.
 4. Build a small intent/SQL/report/UX evaluation dataset and test the production-design
    assumptions, prioritizing business grain, status and calendar boundaries.
-5. Done: Golden Knowledge (GOLDEN_KNOWLEDGE.md) and answer evaluation (EVALUATION.md).
-   Next: framework/experience section, production diagrams, documentation condensation.
+5. Done: Golden Knowledge, answer evaluation, design rewrite, diagrams, README.
+   Remaining: fresh-machine setup check; developer review of the experience
+   paragraph in PRODUCTION_HLD.md §3.
 6. Before real data use: trace redaction, authenticated access/data-layer isolation,
    secret management, backups and stronger adversarial/privacy evaluation.
 

@@ -1,8 +1,13 @@
 .venv
 /.env
 /.env.langfuse
-.HLD/agent-loop.mmd
 /access.local.json
 /logs/
 __pycache__/
 *.pyc
+# Exploratory local utilities (not part of the CLI; may contain local project IDs)
+/inspect_schema.py
+/inspect_schema.ipynb
+/inspect_scope.py
+/inspect_sql.py
+/access.example copy.json

@@ -8,7 +8,7 @@ evaluated. This document separates what runs today from the production plan.
 
 | Layer | What it proves | Implemented as | Cost |
 | --- | --- | --- | --- |
-| Unit and regression tests | Policies, budgets, deletion flow, failure paths behave as designed | `tests/` (236 tests; PostgreSQL cases opt-in) | Free, every change |
+| Unit and regression tests | Policies, budgets, deletion flow, failure paths behave as designed | `tests/` (241 tests; PostgreSQL cases opt-in) | Free, every change |
 | Retrieval evaluation | The right Golden precedent is found; nothing for chit-chat | `python -m retail_agent.golden.evaluate`, 30 EN/RU cases | ~30 embedding calls |
 | Answer evaluation | End-to-end answers are correct, safe and on intent | `python -m retail_agent.evaluation.answers`, 15 cases | ~30 model calls + small BigQuery scans |
 | UX evaluation | Executives can get value without coaching | Proxies in the answer run; study is a production plan | People's time |

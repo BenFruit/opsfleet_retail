@@ -1,22 +1,57 @@
+%% PROPOSED production serving architecture on Google Cloud (online path).
+%% Offline Golden ingestion, evaluation gates and feedback mining: learning-loop.mmd.
+%% The prototype implements the agent runtime, typed tools, BigQuery path and
+%% PostgreSQL stores locally behind a CLI with a trusted startup identity.
 flowchart TB
-    U["CLI / future web client"] --> AUTH["OIDC identity + authenticated HTTPS API"]
-    AUTH --> APP["Cloud Run: modular Python LangGraph application"]
-    ENT["Authoritative tenant-brand entitlements"] --> APP
-    APP <--> MODEL["Gemini on Vertex AI"]
-    APP --> QUERY["QueryService: policy, scope, privacy, dry run, budgets"]
-    QUERY --> BQ[("BigQuery safe views / data-layer authorization")]
-    ENT --> BQ
-    APP <--> DB[("Cloud SQL PostgreSQL + pgvector: reports, memory, sessions, confirmations, index")]
-    APP <--> RET["Authorized hybrid Golden retrieval"]
-    RET --> DB
-    RET --> GCS[("Cloud Storage: immutable reviewed Golden trios")]
-    ADMIN["Authenticated persona admin: review, version, publish, rollback"] --> CFG["Versioned style config"]
-    CFG --> APP
-    REVIEW["Sanitized feedback + analyst review"] --> JOB["Cloud Run Jobs / Tasks: ingestion and offline evaluation"]
-    JOB --> GCS
-    JOB --> DB
-    JOB -.->|"release gate, not autonomous learning"| APP
-    APP -.-> OBS["Sanitized OpenTelemetry / Langfuse + Cloud Monitoring"]
-    QUERY -.-> OBS
-    SEC["Secret Manager, least-privilege IAM, private DB, backups"] -.-> APP
-    NOTE["PROPOSED production target - not deployed by local Compose"]
+    subgraph Clients["Clients"]
+        CLI["CLI (prototype)"]
+        WEB["Web or Slack client"]
+    end
+
+    subgraph Edge["Edge and identity"]
+        LB["HTTPS Load Balancer + Cloud Armor"]
+        IDP["IAP / OIDC: company IdP"]
+    end
+
+    subgraph Run["Cloud Run service: stateless, autoscaled"]
+        API["Chat API: identity, session, streaming, rate limits"]
+        AGENT["Agent runtime: LangGraph loop, budgets, numeric grounding"]
+        TOOLS["Typed tools: QueryService, Reports, Memory, Golden retrieval; later Charts, Email, Web search"]
+    end
+
+    subgraph AI["Vertex AI"]
+        GEM["Gemini planner + fallback model"]
+        EMB["Gemini embeddings"]
+    end
+
+    subgraph Data["Data stores"]
+        BQ[("BigQuery TheLook: authorized views, row access by brand")]
+        PG[("Cloud SQL PostgreSQL + pgvector: sessions, confirmations, reports, memory, Golden index, persona versions")]
+        ENT[("Entitlements: manager to brands")]
+        SEC["Secret Manager"]
+    end
+
+    subgraph Ops["Observability"]
+        LOGS["Cloud Logging: allowlisted JSON events, sink to BigQuery"]
+        TRACE["OpenTelemetry: Cloud Trace / Langfuse, redacted"]
+        MON["Cloud Monitoring: SLOs, alerts"]
+    end
+
+    PERSONA["Persona console: draft, preview, publish, rollback"]
+
+    CLI --> LB
+    WEB --> LB
+    LB --> IDP --> API
+    ENT -->|"trusted brand scope"| API
+    SEC -.->|"keys, DB credentials"| API
+    API --> AGENT
+    AGENT <-->|"JSON actions, Pydantic-validated, retry + fallback"| GEM
+    AGENT --> TOOLS
+    TOOLS -->|"AST-validated, brand-scoped SQL, dry run, byte caps"| BQ
+    ENT -->|"row access policy"| BQ
+    TOOLS <-->|"parameterized SQL, owner-scoped"| PG
+    TOOLS -->|"query embeddings"| EMB
+    PERSONA -->|"versioned style, no redeploy"| PG
+    AGENT -.->|"events"| LOGS
+    AGENT -.->|"spans"| TRACE
+    LOGS --> MON

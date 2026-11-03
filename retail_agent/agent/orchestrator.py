@@ -21,6 +21,7 @@ from retail_agent.security.access import get_allowed_brands
 
 logger = logging.getLogger(__name__)
 # Controller feedback that is not a failed query (must not count as one).
+PARTIAL_PREFIX = "I could not fully complete the analysis."
 _FEEDBACK_CODES = {"model_invalid_action", "model_invalid_json", "repair_required", "ungrounded_numbers"}
 
 
@@ -183,6 +184,8 @@ class AnalyticalAgent:
             self.history_truncated = True
         logger.info("agent_turn_completed", extra={
             "turn_id": state["turn_id"], "query_count": result["queries"],
+            # "partial" = controlled stop (budget, unrecovered failure); a key quality metric.
+            "status": "partial" if result["answer"].startswith(PARTIAL_PREFIX) else "ok",
             "model_calls": result["model_calls"], "scan_bytes_used": result["scan_bytes_used"],
             "duration_ms": round((monotonic() - started) * 1000),
             "report_calls": result["report_calls"],
@@ -433,7 +436,7 @@ class AnalyticalAgent:
     @staticmethod
     def _partial(state: AgentState, reason: str) -> str:
         successes = [item for item in state["observations"] if item["status"] == "ok"]
-        text = f"I could not fully complete the analysis. {reason}"
+        text = f"{PARTIAL_PREFIX} {reason}"
         failures = [item for item in state["observations"] if item["status"] == "error" and item.get("code") not in _FEEDBACK_CODES]
         if failures:
             last = failures[-1]

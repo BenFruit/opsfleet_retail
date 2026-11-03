@@ -27,6 +27,9 @@ Reading order:
   retrieval and retrieval evaluation; the agent role reads the index only.
 - `retail_agent/evaluation/`, `evals/`: live answer evaluation (paid calls; results in logs/eval).
 - `retail_agent/safety/grounding.py`: prose figures must match checked results.
+- `retail_agent/observability/metrics.py`: agent metrics and per-turn timeline from logs.
+- `HLD/PRODUCTION_HLD.md` is the main design; `tests/test_docs.py` keeps embedded
+  Mermaid diagrams equal to `HLD/*.mmd` and relative links valid.
 - `retail_agent/observability/`: allowlisted JSON logs and optional Langfuse.
 - `docker/reports-postgres/`: ordered idempotent migrations 001-004.
 - `tests/`: mocked unit/regression tests and opt-in local PostgreSQL integration.
@@ -95,4 +98,4 @@ Git transfers code/docs, not local DB data, remote persona contents or credentia
 Fresh-machine setup and assessment-quality evaluation remain explicit next steps.
 Update `HLD/HANDOFF.md` and relevant focused docs after significant decisions;
 keep Mermaid diagrams and production-vs-MVP labels synchronized. Do not claim
-the regression suite (236 tests) or the 15-case answer evaluation or isolated live successes prove semantic correctness.
+the regression suite (241 tests) or the 15-case answer evaluation or isolated live successes prove semantic correctness.
