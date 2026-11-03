@@ -210,6 +210,31 @@ class QueryServiceTests(unittest.TestCase):
         self.assertIn("query_failed", emitted)
         self.assertIn("error_code", emitted)
 
+    def test_each_failure_is_tagged_with_its_stage_in_error_and_log(self):
+        cases = (
+            ("authorization", "access_denied", {"allowed_brands": []}, None),
+            ("authorization", "cost_limit", {"scan_budget_bytes": 0}, None),
+            ("validation", "invalid_sql", {"sql": "DELETE FROM x"}, None),
+            ("dry_run", "cost_limit", {}, lambda: setattr(self.runner.dry_run, "return_value", 5000)),
+            ("dry_run", "backend_denied", {}, lambda: setattr(self.runner.dry_run, "side_effect", google_errors.Forbidden("x"))),
+            ("execution", "timeout", {}, lambda: setattr(self.runner.execute_scoped_query, "side_effect", TimeoutError())),
+            ("result_bounds", "result_limit", {}, lambda: setattr(self.runner.execute_scoped_query, "return_value",
+                                                                  QueryExecution(rows=({"a": 1},) * 3, truncated=False))),
+        )
+        for stage, code, kwargs, arrange in cases:
+            with self.subTest(stage=stage, code=code):
+                self.setUp()
+                if arrange:
+                    arrange()
+                arguments = {"allowed_brands": BRANDS_A, **kwargs}
+                with self.assertRaises(QueryServiceError) as caught:
+                    self.service.execute(arguments.pop("sql", SQL), **arguments)
+                self.assertEqual((caught.exception.stage, caught.exception.code), (stage, code))
+                failed = self.logger.warning.call_args.kwargs["extra"]
+                self.assertEqual((failed["stage"], failed["error_code"]), (stage, code))
+                self.assertEqual(failed["query_id"], caught.exception.query_id)
+                self.assertEqual(failed["validation_reason"] is not None, stage == "validation")
+
     def test_every_query_event_carries_turn_and_query_ids(self):
         self.service.execute(SQL, allowed_brands=BRANDS_A, turn_id="turn-1")
         self.runner.execute_scoped_query.side_effect = google_errors.ServiceUnavailable("SECRET")

@@ -58,6 +58,15 @@ check passes); the `remember` turn also restated the previous answer.
   `report_summary`, golden `query_text`, `route_after_plan` (new direct test),
   `_log_query_failure`. Codes and messages are unchanged.
   `PersonaProvider.document_id` is left for step E. 256 tests pass.
+  Commit `b02835a`.
+- **D. `QueryService.execute` as explicit stages.** `execute` now reads as five
+  `with run.stage(...)` blocks (authorization, validation, dry_run, execution,
+  result_bounds) calling `_byte_limit`, `_authorized_brands`, `_validate`,
+  `_dry_run` and `_result_size`. `_QueryRun` holds query/turn IDs and timing
+  and owns the stage-tagged failure handling that the mutable `stage` variable
+  and one large try/except did before. Error codes, messages, stages and log
+  events are unchanged; a new test checks the stage tag in both the error and
+  the `query_failed` log for every stage. 257 tests pass.
 
 ## Review findings (backend developer, 3 November) still open
 
@@ -100,7 +109,7 @@ Closed by steps 1-4: 3 (commands extracted), 6 (prompt in a file),
 - ~~C. Error classifiers and statics~~ (done above). Table-driven `llm/errors.py`
   (`describe_model_error`, empty-response reasons) and a BigQuery error
   classifier; remove the static helpers listed above. Findings 5, 7, 8.
-- **D. `QueryService.execute` as explicit stages** (authorize, validate,
+- ~~D. `QueryService.execute` as explicit stages~~ (done above) (authorize, validate,
   dry run, execute, guard) with unchanged error codes. Finding 4.
 - **E. Persona.** Split Google Doc reading from current-style tracking,
   rename, `parse_google_doc_id` as a function, default style in
