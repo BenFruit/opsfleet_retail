@@ -124,7 +124,3 @@ class ResultGuardTests(unittest.TestCase):
     def test_star_projection_still_rejected(self):
         with self.assertRaises(ValueError):
             validate_query("SELECT p.* FROM `bigquery-public-data.thelook_ecommerce.products` AS p")
-
-
-if __name__ == "__main__":
-    unittest.main()

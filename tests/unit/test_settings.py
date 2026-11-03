@@ -7,6 +7,7 @@ from unittest.mock import patch
 from pydantic import ValidationError
 
 from retail_agent.settings import Settings, invalid_settings
+from support.paths import REPO_ROOT
 
 
 class SettingsTests(unittest.TestCase):
@@ -56,11 +57,7 @@ class SettingsTests(unittest.TestCase):
             Settings(_env_file=None).gemini_model = "other"
 
     def test_components_do_not_read_the_environment(self):
-        root = Path(__file__).resolve().parents[1] / "retail_agent"
+        root = REPO_ROOT / "retail_agent"
         offenders = [path.relative_to(root).as_posix() for path in root.rglob("*.py")
                      if any(token in path.read_text(encoding="utf-8") for token in ("os.getenv", "os.environ", "load_dotenv"))]
         self.assertEqual(offenders, [])
-
-
-if __name__ == "__main__":
-    unittest.main()

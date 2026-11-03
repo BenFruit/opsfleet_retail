@@ -16,7 +16,7 @@ from retail_agent.safety.result_guard import ResultGuardError, make_observation
 from retail_agent.safety.sql_validator import validate_query
 from retail_agent.schema.catalog import TABLE_POLICIES
 from retail_agent.security.query_scope import apply_brand_scope
-from demo_access import DEMO_ENTITLEMENTS
+from support.demo_access import DEMO_ENTITLEMENTS
 
 
 PATH = "bigquery-public-data.thelook_ecommerce"
@@ -157,7 +157,3 @@ class DemographicSQLTests(unittest.TestCase):
         self.assertNotIn("DO_NOT_PUBLISH", prompt + turn.answer)
         self.assertNotIn(COHORT_COLUMN, prompt)
         self.assertIn(">= 6", runner.execute_scoped_query.call_args.args[0])
-
-
-if __name__ == "__main__":
-    unittest.main()

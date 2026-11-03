@@ -225,7 +225,3 @@ class QueryScopeTests(unittest.TestCase):
         scoped = apply_brand_scope(f"SELECT p.id FROM `{DATASET}.products` AS p")
         with self.assertRaises(ValueError):
             apply_brand_scope(scoped)
-
-
-if __name__ == "__main__":
-    unittest.main()

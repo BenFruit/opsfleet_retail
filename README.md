@@ -217,10 +217,11 @@ All limits (model calls, SQL attempts, bytes, rows, timeouts) are listed in the
 ## Tests, evaluation and metrics
 
 ```powershell
-uv run python -B -m unittest discover -s tests -q          # offline, no credentials
+uv run python -B -m pytest                                 # offline, no credentials
+uv run python -B -m pytest tests/unit                      # one layer (unit, integration)
 
 $env:RETAIL_TEST_POSTGRES='1'                               # + real PostgreSQL/pgvector
-uv run python -B -m unittest discover -s tests -q
+uv run python -B -m pytest
 Remove-Item Env:RETAIL_TEST_POSTGRES
 
 uv run python -m retail_agent.golden.evaluate              # retrieval quality (paid embeddings)
@@ -290,7 +291,9 @@ golden/trios/                the Golden Knowledge bucket (12 reviewed trios)
 evals/                       answer evaluation cases
 docker/reports-postgres/     migrations 001-004
 HLD/                         design documents and Mermaid diagrams
-tests/                       unit, regression and opt-in PostgreSQL tests
+tests/unit/                  per-module tests, folders mirror retail_agent/
+tests/integration/           agent graph with fake backends; postgres/ is opt-in real DB
+tests/support/               demo entitlements and repository paths shared by tests
 ```
 
 Git does not carry local data: reports, memories, the Golden index, traces and

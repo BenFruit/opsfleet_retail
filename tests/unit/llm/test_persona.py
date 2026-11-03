@@ -8,7 +8,7 @@ from retail_agent.agent.orchestrator import AnalyticalAgent
 from retail_agent.data.query_service import QueryLimits
 from retail_agent.llm.analyst import Analyst, SYSTEM_INSTRUCTION
 from retail_agent.llm.persona import DEFAULT_STYLE, GoogleDocReader, PersonaStyle, parse_google_doc_id
-from demo_access import DEMO_ENTITLEMENTS
+from support.demo_access import DEMO_ENTITLEMENTS
 
 
 DOC_ID = "a" * 40
@@ -146,7 +146,3 @@ class PersonaTests(unittest.TestCase):
             agent.ask("Question two")
             agent.ask("/confirm")
             self.assertEqual(refresh.call_count, 2)
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -81,7 +81,17 @@ check passes); the `remember` turn also restated the previous answer.
   `RememberRequest` documents why extra fields are forbidden. The repository
   uses `LIMIT %s` with `MAX_ENTRIES + 1` (explained: detect an over-limit store)
   and the service/repository messages use the constant; texts are unchanged.
-  262 tests pass.
+  262 tests pass. Commit `746df30`.
+- **G1. Test layout and pytest.** pytest is a dev dependency and the runner
+  (`uv run python -B -m pytest`); tests stay `unittest.TestCase` classes. Test
+  classes were moved, unchanged, into `tests/unit/<package>/` (mirrors
+  `retail_agent/`), `tests/integration/` (agent graph with fake backends, chat
+  loop) and `tests/integration/postgres/` (opt-in real DB); `demo_access.py`
+  moved to `tests/support/`, and `support/paths.py` gives `REPO_ROOT` instead of
+  `parents[1]`. Mixed files were split by class; unused imports and helpers were
+  dropped. Checked: the same 262 `Class.test` names before and after, and every
+  class body is identical except the two that read repository files. pytest uses
+  `--import-mode=importlib` so equal file names in different folders are allowed.
 
 ## Review findings (backend developer, 3 November) still open
 
@@ -130,11 +140,11 @@ Closed by steps 1-4: 3 (commands extracted), 6 (prompt in a file),
   rename, `parse_google_doc_id` as a function, default style in
   `llm/prompts/`. Findings 10-12.
 - ~~F. Memory~~ (done above). One limit constant, docstrings. Findings 14, 15.
-- **G. Tests.** Reorganize after the code settles: `tests/unit/<package>/`
+- **G. Tests.** G1 done above; G2 remains. Reorganize after the code settles: `tests/unit/<package>/`
   mirroring `retail_agent/`, `tests/integration/` (graph with fake backends,
   PostgreSQL), `tests/support/` (demo entitlements, fakes, builders). Test pure
   modules such as `agent/answer.py` directly instead of through the whole graph.
-  Open decision: move from `unittest` to `pytest` (runs existing tests unchanged,
-  so migration can be gradual).
+  Decided: pytest as the runner, existing tests unchanged (G1); G2 adds direct
+  tests of pure modules.
 
 More review comments from the same developer are pending and may extend A-G.

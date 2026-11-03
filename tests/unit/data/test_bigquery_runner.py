@@ -111,7 +111,3 @@ class BigQueryRunnerTests(unittest.TestCase):
             with self.subTest(brands=brands), self.assertRaises(PermissionError):
                 self.execute(allowed_brands=brands)
         self.runner.client.query.assert_not_called()
-
-
-if __name__ == "__main__":
-    unittest.main()

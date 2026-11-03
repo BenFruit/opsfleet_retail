@@ -51,7 +51,3 @@ class MetricsTests(unittest.TestCase):
 
     def test_empty_log_does_not_crash(self):
         self.assertEqual(summarize([])["turns"], 0)
-
-
-if __name__ == "__main__":
-    unittest.main()

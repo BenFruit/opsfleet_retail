@@ -1,25 +1,18 @@
 import json
-import os
 import unittest
-from pathlib import Path
 from unittest.mock import Mock, patch
-from uuid import uuid4
 
 from pydantic import ValidationError
 
-from retail_agent.agent.models import AgentAction
-from retail_agent.agent.orchestrator import AnalyticalAgent
 from retail_agent.golden.evaluate import best_threshold, score
 from retail_agent.golden.ingest import DEFAULT_BUCKET, bigquery_dry_run, ingest, load_bucket, plan_ingest
 from retail_agent.golden.models import GoldenError, GoldenTrio
 from retail_agent.golden.service import GoldenKnowledge, query_text
-from retail_agent.llm.analyst import Analyst
 from retail_agent.safety.sql_validator import validate_query
-from demo_access import DEMO_ENTITLEMENTS
+from support.paths import REPO_ROOT
 
 
-ROOT = Path(__file__).resolve().parents[1]
-BUCKET = ROOT / DEFAULT_BUCKET
+BUCKET = REPO_ROOT / DEFAULT_BUCKET
 VECTOR = [0.0] * 767 + [1.0]
 
 
@@ -149,33 +142,6 @@ class GoldenRetrievalTests(unittest.TestCase):
         self.assertEqual(query_text(long_question, "previous"), long_question)
 
 
-class GoldenAgentWiringTests(unittest.TestCase):
-    def test_examples_reach_every_planning_step_and_follow_ups_use_history(self):
-        analyst = Mock()
-        analyst.llm.last_usage = {}
-        analyst.decide.side_effect = [AgentAction(action="answer", answer="One"), AgentAction(action="answer", answer="Two")]
-        golden = Mock()
-        golden.retrieve.return_value = {"status": "ready", "items": [{"trio_id": "monthly-revenue-trend"}]}
-        with patch("retail_agent.agent.orchestrator.logger"):
-            agent = AnalyticalAgent(analyst, Mock(), manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS, golden=golden)
-            agent.ask("Revenue by month for our brands")
-            agent.ask("and last year?")
-        self.assertEqual(analyst.decide.call_args.kwargs["golden"]["items"][0]["trio_id"], "monthly-revenue-trend")
-        first, second = golden.retrieve.call_args_list
-        self.assertIsNone(first.kwargs["previous_question"])
-        self.assertEqual(second.kwargs["previous_question"], "Revenue by month for our brands")
-
-    def test_prompt_contains_examples_and_precedent_rules(self):
-        llm = Mock()
-        llm.generate_structured.return_value = AgentAction(action="answer", answer="ok")
-        analyst = Analyst(llm, {})
-        analyst.decide(question="q", history=[], observations=[], budget={},
-                       golden={"status": "ready", "items": [{"trio_id": "x"}]})
-        prompt = json.loads(llm.generate_structured.call_args.args[0])
-        self.assertEqual(prompt["golden_examples"]["items"][0]["trio_id"], "x")
-        self.assertIn("NOT current data", llm.generate_structured.call_args.kwargs["system_instruction"])
-
-
 class GoldenEvaluationMetricTests(unittest.TestCase):
     def test_metrics_and_threshold_choice(self):
         results = [
@@ -188,31 +154,3 @@ class GoldenEvaluationMetricTests(unittest.TestCase):
         best = best_threshold(results)
         self.assertEqual((best["recall_at_3"], best["negative_false_positive_rate"]), (1.0, 0.0))
         self.assertGreater(best["threshold"], 0.55)
-
-
-@unittest.skipUnless(os.getenv("RETAIL_TEST_POSTGRES") == "1", "Opt-in local pgvector integration test")
-class GoldenPostgresTests(unittest.TestCase):
-    def test_writer_publishes_reader_searches_and_reader_cannot_write(self):
-        from retail_agent.golden.repository import GoldenRepository
-        from retail_agent.settings import Settings
-        from retail_agent.storage.postgres import StorageError, connection_factory, golden_ingest_connection_factory
-
-        writer = GoldenRepository(golden_ingest_connection_factory(Settings()))
-        reader = GoldenRepository(connection_factory(Settings()))
-        test_trio = trio(id="test-" + uuid4().hex[:12])
-        try:
-            writer.publish(upserts=[(test_trio, VECTOR)], remove=[], model="test-model")
-            found = reader.search(vector=VECTOR, query_text="monthly revenue", model="test-model")
-            self.assertEqual(found[0]["trio_id"], test_trio.id)
-            self.assertAlmostEqual(found[0]["similarity"], 1.0, places=5)
-            self.assertGreater(found[0]["lexical"], 0)
-            self.assertEqual(GoldenTrio.model_validate(found[0]["document"]), test_trio)
-            with self.assertRaises(StorageError):  # Chat agent role has SELECT only.
-                reader.publish(upserts=[(test_trio, VECTOR)], remove=[], model="test-model")
-        finally:
-            writer.publish(upserts=[], remove=[test_trio.id], model="test-model")
-        self.assertNotIn(test_trio.id, writer.indexed_hashes())
-
-
-if __name__ == "__main__":
-    unittest.main()

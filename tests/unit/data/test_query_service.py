@@ -6,6 +6,7 @@ from google.api_core import exceptions as google_errors
 from retail_agent.data.bigquery_runner import BigQueryRunner, QueryExecution
 from retail_agent.data.query_service import QueryLimits, QueryService, QueryServiceError
 
+
 BRANDS_A = frozenset({"Brand A", "Brand B"})
 
 
@@ -266,7 +267,3 @@ class QueryServiceTests(unittest.TestCase):
         for kwargs in cases:
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 QueryLimits(**kwargs)
-
-
-if __name__ == "__main__":
-    unittest.main()

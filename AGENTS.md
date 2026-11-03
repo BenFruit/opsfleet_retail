@@ -46,7 +46,9 @@ Reading order:
   Mermaid diagrams equal to `HLD/*.mmd` and relative links valid.
 - `retail_agent/observability/`: allowlisted JSON logs and optional Langfuse.
 - `docker/reports-postgres/`: ordered idempotent migrations 001-004.
-- `tests/`: mocked unit/regression tests and opt-in local PostgreSQL integration.
+- `tests/` (pytest runner, tests written as `unittest.TestCase`): `unit/<package>/`
+  mirrors `retail_agent/`; `integration/` runs the agent graph with fake backends,
+  `integration/postgres/` needs `RETAIL_TEST_POSTGRES=1`; `support/` has shared helpers.
 - `docker-compose.yaml`: reports DB plus independent optional Langfuse stack.
 
 ## Commands (PowerShell, repository root)
@@ -55,9 +57,9 @@ Reading order:
 uv sync
 docker compose up -d --wait reports-postgres
 uv run python -B main.py --manager manager_a
-uv run python -B -m unittest discover -s tests -q
+uv run python -B -m pytest
 $env:RETAIL_TEST_POSTGRES='1'
-uv run python -B -m unittest discover -s tests -q
+uv run python -B -m pytest
 docker compose config --quiet
 git diff --check
 git status --short

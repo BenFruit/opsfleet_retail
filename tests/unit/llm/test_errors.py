@@ -121,7 +121,3 @@ class ModelErrorTests(unittest.TestCase):
         with self.assertRaises(ModelResponseError) as caught:
             response_text(response)
         self.assertEqual(caught.exception.code, "model_response_blocked")
-
-
-if __name__ == "__main__":
-    unittest.main()

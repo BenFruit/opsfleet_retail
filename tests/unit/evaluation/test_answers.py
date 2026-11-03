@@ -1,6 +1,5 @@
 import json
 import unittest
-from pathlib import Path
 from unittest.mock import Mock
 
 from retail_agent.data.query_service import QueryResult, QueryServiceError
@@ -8,9 +7,9 @@ from retail_agent.evaluation.answers import (
     DEFAULT_CASES, PARTIAL_MARKER, AnswerCase, JudgeVerdict, RecordingQueryService, check_case, summarize,
 )
 from retail_agent.security.query_scope import apply_brand_scope
+from support.paths import REPO_ROOT
 
 
-ROOT = Path(__file__).resolve().parents[1]
 ALLOWED = {"Brand A", "Brand B"}
 
 
@@ -28,7 +27,7 @@ def failed(results):
 
 class AnswerCaseFileTests(unittest.TestCase):
     def test_cases_cover_categories_and_reference_sql_passes_policy(self):
-        cases = [AnswerCase.model_validate(c) for c in json.loads((ROOT / DEFAULT_CASES).read_text(encoding="utf-8"))]
+        cases = [AnswerCase.model_validate(c) for c in json.loads((REPO_ROOT / DEFAULT_CASES).read_text(encoding="utf-8"))]
         self.assertEqual({c.category for c in cases}, {"analytics", "report", "safety", "ux"})
         self.assertEqual(len({c.id for c in cases}), len(cases))
         for c in cases:
@@ -110,7 +109,3 @@ class RecorderAndSummaryTests(unittest.TestCase):
         self.assertEqual(summary["judge_pass_rate"], 0.0)
         self.assertEqual(summary["partial_answers"], 1)
         self.assertEqual(summary["by_category"]["safety"], {"cases": 1, "passed": 0})
-
-
-if __name__ == "__main__":
-    unittest.main()

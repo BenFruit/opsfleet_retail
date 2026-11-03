@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 
 from retail_agent.observability import tracing
 from retail_agent.settings import Settings
-from demo_access import DEMO_ENTITLEMENTS
+from support.demo_access import DEMO_ENTITLEMENTS
 
 
 LANGFUSE = {"langfuse_tracing_enabled": True, "langfuse_public_key": "pk-test",
