@@ -11,3 +11,7 @@ __pycache__/
 /inspect_scope.py
 /inspect_sql.py
 /access.example copy.json
+# Local working notes and AI-agent instructions (not part of the deliverable)
+/dev-notes/
+/AGENTS.md
+/CLAUDE.md

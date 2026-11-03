@@ -17,7 +17,6 @@ documents below are deep dives it links to.
 - [STAKEHOLDER_POLICY.md](STAKEHOLDER_POLICY.md): PII and access rules confirmed with the client.
 - [REQUEST_SAFETY_CLASSIFIER.md](REQUEST_SAFETY_CLASSIFIER.md): optional distilled request classifier (proposal).
 - [task.txt](task.txt): the original assignment.
-- [HANDOFF.md](HANDOFF.md): current state for whoever continues the work.
 
 ## Diagrams (Mermaid)
 

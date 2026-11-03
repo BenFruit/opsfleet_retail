@@ -20,7 +20,7 @@ choices, every requirement, error handling, production path) ·
 | Destructive operations | Report deletion shows a frozen preview; only a separate `/confirm` deletes |
 | Learning loop | Explicit user preferences (`remember ...`); reviewed trio updates through re-ingestion |
 | Resilience | SQL self-repair (initial + 2), model retry + fallback model, cost caps, graceful degradation of every optional dependency |
-| Quality assurance | 241 tests, retrieval evaluation, live answer evaluation with Golden on/off A/B |
+| Quality assurance | 284 tests, retrieval evaluation, live answer evaluation with Golden on/off A/B |
 | Observability | Correlated JSON events, metrics report, per-turn timeline, optional local Langfuse |
 | Persona | Tone and structure editable in a Google Doc, applied on the next question without redeploying |
 
@@ -232,9 +232,11 @@ uv run python -m retail_agent.observability.metrics        # agent metrics from 
 uv run python -m retail_agent.observability.metrics --turn <turn_id>
 ```
 
-Latest results: 241 tests pass; retrieval recall@3 0.96; answer evaluation 15/15
-deterministic checks and 100% judge pass with Golden Knowledge versus 14/15 and
-60% without ([HLD/EVALUATION.md](HLD/EVALUATION.md)).
+Latest results: 284 tests pass (including PostgreSQL); retrieval recall@3 0.96;
+answer evaluation 15/15 deterministic checks and 100% judge pass with Golden
+Knowledge versus 14/15 and 60% without ([HLD/EVALUATION.md](HLD/EVALUATION.md)).
+Setup was also verified from a fresh clone on Windows, including a fresh
+database volume (migrations 001-004), Golden ingestion and a CLI question.
 
 ## Observability
 

@@ -8,7 +8,7 @@ evaluated. This document separates what runs today from the production plan.
 
 | Layer | What it proves | Implemented as | Cost |
 | --- | --- | --- | --- |
-| Unit and regression tests | Policies, budgets, deletion flow, failure paths behave as designed | `tests/` (241 tests; PostgreSQL cases opt-in) | Free, every change |
+| Unit and regression tests | Policies, budgets, deletion flow, failure paths behave as designed | `tests/` (284 tests with pytest; PostgreSQL cases opt-in) | Free, every change |
 | Retrieval evaluation | The right Golden precedent is found; nothing for chit-chat | `python -m retail_agent.golden.evaluate`, 30 EN/RU cases | ~30 embedding calls |
 | Answer evaluation | End-to-end answers are correct, safe and on intent | `python -m retail_agent.evaluation.answers`, 15 cases | ~30 model calls + small BigQuery scans |
 | UX evaluation | Executives can get value without coaching | Proxies in the answer run; study is a production plan | People's time |
@@ -89,7 +89,10 @@ Fifteen cases, one run per mode and one model: LLM outputs vary between runs, so
 treat the numbers as a demonstration of the method, not a benchmark. The judge
 is the same model family as the agent and was not calibrated against human
 graders. Reference numbers cover the cases where a single correct value exists;
-report quality still needs analyst review.
+report quality still needs analyst review. The paid run predates a later code
+refactoring; that refactoring kept the model-facing prompt and action schema
+identical (a snapshot test guards the schema) and was checked with the full test
+suite and live chat runs, but the 15-case evaluation was not repeated.
 
 ## Release gates (production proposal)
 

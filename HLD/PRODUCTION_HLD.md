@@ -17,7 +17,7 @@ not deployed. Setup and an example session are in the [README](../README.md).
 | 3 | Destructive operations (required in prototype) | Implemented: frozen preview + separate `/confirm` | [§5.3](#53-high-stakes-oversight-report-deletion), [SAVED_REPORTS.md](SAVED_REPORTS.md) |
 | 4 | Learning loop | User level implemented (explicit memory); system level: reviewed path demonstrated, automation proposed | [§5.4](#54-continuous-improvement), [USER_MEMORY.md](USER_MEMORY.md) |
 | 5 | Resilience (required in prototype) | Implemented: bounded SQL repair, model retry + fallback, graceful degradation | [§5.5](#55-resilience-and-error-handling) |
-| 6 | Quality assurance | Implemented: 241 tests, retrieval eval, live answer eval with A/B | [§5.6](#56-quality-assurance), [EVALUATION.md](EVALUATION.md) |
+| 6 | Quality assurance | Implemented: 284 tests, retrieval eval, live answer eval with A/B | [§5.6](#56-quality-assurance), [EVALUATION.md](EVALUATION.md) |
 | 7 | Observability (required in prototype) | Implemented: correlated JSON events, metrics report, per-turn timeline, optional Langfuse | [§5.7](#57-observability), [OBSERVABILITY_AND_ACCESS.md](OBSERVABILITY_AND_ACCESS.md) |
 | 8 | Persona management | Implemented: style-only Google Doc, refreshed per question | [§5.8](#58-persona-management), [PERSONA_MANAGEMENT.md](PERSONA_MANAGEMENT.md) |
 
@@ -425,7 +425,7 @@ dependency, admission control and per-tenant quotas, idempotency keys on writes.
 
 ### 5.6 Quality assurance
 
-**Implemented** ([EVALUATION.md](EVALUATION.md)): 241 unit/regression tests;
+**Implemented** ([EVALUATION.md](EVALUATION.md)): 284 unit/integration tests;
 retrieval evaluation (30 cases); live answer evaluation (15 cases: analytics,
 reports, UX, safety) with deterministic checks (reference numbers from reviewed SQL
 under the same brand scope, required and forbidden SQL, numeric grounding, PII,
@@ -549,6 +549,16 @@ and are cited separately from database facts.
   Langfuse traces are not redacted.
 - Numeric grounding covers money and count figures; derived percentages and
   averages written in prose are not verified (seen in the README example).
-- Memory has no supersession of conflicting preferences.
+- Memory has no supersession of conflicting preferences, and one request to
+  remember several things may store only some of them
+  ([USER_MEMORY.md](USER_MEMORY.md)).
+- Analytic correctness is not guaranteed. Manual runs showed partial or rolling
+  months described as full months, causal claims the data does not support and
+  missing status filters; prompt rules and Golden precedents reduce, not remove, these.
+- The demographic subset rejects CTEs, subqueries, windows and conditional
+  aggregates, and `AVG(age)` over purchases is purchase-weighted
+  ([QUERY_SAFETY.md](QUERY_SAFETY.md)).
+- Conversation history is bounded (6 turns / 20,000 characters); a single turn
+  larger than the bound clears the history instead of keeping a shortened copy.
 - Evaluation sets are small (30 retrieval, 15 answer cases) and the judge is not
   calibrated against humans.
