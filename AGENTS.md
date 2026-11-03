@@ -49,7 +49,8 @@ Reading order:
 - `tests/` (pytest runner, tests written as `unittest.TestCase`): `unit/<package>/`
   mirrors `retail_agent/`; `integration/` runs the agent graph with fake backends,
   `integration/postgres/` needs `RETAIL_TEST_POSTGRES=1`; `support/` has shared helpers
-  (demo entitlements, paths, agent-state builders).
+  (demo entitlements, paths, agent-state builders, and `agent_action_schema.json`,
+  the snapshot of the schema Gemini receives; regenerate it only for deliberate prompt changes).
 - `docker-compose.yaml`: reports DB plus independent optional Langfuse stack.
 
 ## Commands (PowerShell, repository root)
@@ -119,4 +120,4 @@ branches. Commit and push only when the developer asks.
 Git transfers code/docs, not local DB data, remote persona contents or credentials.
 Update `HLD/HANDOFF.md` and relevant focused docs after significant decisions;
 keep Mermaid diagrams and production-vs-MVP labels synchronized. Do not claim
-the regression suite (278 tests) or the 15-case answer evaluation or isolated live successes prove semantic correctness.
+the regression suite (282 tests) or the 15-case answer evaluation or isolated live successes prove semantic correctness.

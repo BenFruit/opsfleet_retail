@@ -3,12 +3,24 @@
 from contextlib import contextmanager
 
 from retail_agent.llm.embeddings import vector_literal
-from retail_agent.reports.models import ReportError, ReportRequest
+from retail_agent.reports.models import MAX_DELETE_IDS, DeleteScope, ReportError, ReportRequest
 from retail_agent.storage.postgres import StorageError
 
 
 _ACCESS = "owner_id = %s AND brand_scope <@ %s::text[] AND cardinality(brand_scope) > 0"
 _SUMMARY = "report_id, title, conversation_id, created_at"
+_CONTAINS_QUERY = "strpos(lower(title || ' ' || content), lower(%s)) > 0"
+
+MAX_SEARCH_RESULTS = 10
+MAX_LISTED = 20
+
+# Deletion scope -> extra WHERE clause and the value bound to it.
+_DELETE_FILTERS = {
+    DeleteScope.MATCHING: (f" AND {_CONTAINS_QUERY}", lambda request, conversation_id: request.query),
+    DeleteScope.CONVERSATION: (" AND conversation_id = %s", lambda request, conversation_id: conversation_id),
+    DeleteScope.ID: (" AND report_id = %s", lambda request, conversation_id: request.report_id),
+    DeleteScope.ALL: ("", None),
+}
 
 
 class ReportRepository:
@@ -37,16 +49,15 @@ class ReportRepository:
             return conn.execute(
                 f"SELECT {_SUMMARY}, content, 1 - (embedding <=> %s::vector) AS similarity FROM saved_reports "
                 f"WHERE {_ACCESS} AND embedding_model = %s AND embedding IS NOT NULL "
-                "ORDER BY (strpos(lower(title || ' ' || content), lower(%s)) > 0) DESC, "
-                "embedding <=> %s::vector, report_id LIMIT 10",
-                (vector_literal(vector), owner, brands, model, query, vector_literal(vector)),
+                f"ORDER BY ({_CONTAINS_QUERY}) DESC, embedding <=> %s::vector, report_id LIMIT %s",
+                (vector_literal(vector), owner, brands, model, query, vector_literal(vector), MAX_SEARCH_RESULTS),
             ).fetchall()
 
     def list(self, *, owner, brands):
         with self.connection() as conn:
             return conn.execute(
-                f"SELECT {_SUMMARY} FROM saved_reports WHERE {_ACCESS} ORDER BY created_at DESC, report_id LIMIT 20",
-                (owner, brands),
+                f"SELECT {_SUMMARY} FROM saved_reports WHERE {_ACCESS} ORDER BY created_at DESC, report_id LIMIT %s",
+                (owner, brands, MAX_LISTED),
             ).fetchall()
 
     def open(self, report_id, *, owner, brands):
@@ -57,18 +68,14 @@ class ReportRepository:
             ).fetchone()
 
     def preview_delete(self, request: ReportRequest, *, owner, brands, conversation_id):
-        clause, values = "", []
-        if request.scope == "matching":
-            clause, values = " AND strpos(lower(title || ' ' || content), lower(%s)) > 0", [request.query]
-        elif request.scope == "conversation":
-            clause, values = " AND conversation_id = %s", [conversation_id]
-        elif request.scope == "id":
-            clause, values = " AND report_id = %s", [request.report_id]
+        """Up to MAX_DELETE_IDS + 1 rows: one extra row tells the caller the set is too large."""
+        clause, value_for = _DELETE_FILTERS[request.scope]
+        values = [value_for(request, conversation_id)] if value_for else []
         with self.connection() as conn:
             # Fail rather than silently preview/delete a partial match set.
             return conn.execute(
-                f"SELECT {_SUMMARY} FROM saved_reports WHERE {_ACCESS}{clause} ORDER BY report_id LIMIT 101",
-                (owner, brands, *values),
+                f"SELECT {_SUMMARY} FROM saved_reports WHERE {_ACCESS}{clause} ORDER BY report_id LIMIT %s",
+                (owner, brands, *values, MAX_DELETE_IDS + 1),
             ).fetchall()
 
     def delete(self, ids: tuple[str, ...], *, owner, brands):

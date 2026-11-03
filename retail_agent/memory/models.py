@@ -18,14 +18,11 @@ MAX_ENTRIES_PER_REQUEST = 5  # One remember action may add at most this many.
 MemoryText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_ENTRY_CHARS)]
 
 
+# Payload of the model's `remember` action: only a list of 1-5 short texts.
+# Extra fields (owner, IDs, flags) are rejected, so the model cannot choose whose
+# memory it writes. Whether saving is allowed at all is decided by the service
+# from the user's own words. No docstring: it would enter the model-facing schema.
 class RememberRequest(BaseModel):
-    """Payload of the model's `remember` action.
-
-    Only a list of 1-5 short texts; extra fields (owner, IDs, flags) are rejected,
-    so the model cannot choose whose memory it writes. Whether saving is allowed
-    at all is decided by the service from the user's own words, not by this model.
-    """
-
     model_config = ConfigDict(extra="forbid")
 
     memories: list[MemoryText] = Field(min_length=1, max_length=MAX_ENTRIES_PER_REQUEST)

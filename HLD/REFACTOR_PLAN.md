@@ -157,4 +157,60 @@ Closed by steps 1-4: 3 (commands extracted), 6 (prompt in a file),
   Decided: pytest as the runner, existing tests unchanged (G1); G2 adds direct
   tests of pure modules.
 
-More review comments from the same developer are pending and may extend A-G.
+## Second review (3 November): reports, memory, embeddings, SQL safety
+
+Screenshots partly predate steps A-F: the `> 20` memory check (F), the
+`os.getenv` embedding model (A) and `ReportLibrary._summary` (C) are already
+fixed. What still applies, and the plan:
+
+| # | Comment | Status / decision |
+|---|---|---|
+| 1 | Logic in `UserMemory`, only DB access in the repository; no `remember`/`forget` names there | Agree. Dedup moves to `ON CONFLICT DO NOTHING` on the existing `UNIQUE (owner_id, normalized_key)`. The 20-entry cap must still be checked inside the locked transaction (concurrent requests), so the repository gets a storage primitive `add(owner, entries, max_entries)` instead of business naming. |
+| 2 | `memory_key`, `explicit_remember` into a separate module | Agree: `memory/intent.py` (explicit-remember gate, normalized key). |
+| 3 | The embedder should only embed, not depend on the LLM client | Agree on the dependency: `Embedder` reaches into `GeminiClient.client`. It will own a genai client built from the API key. Disagree on removing its `check_text`: it is the last check before text leaves for an external API, kept as defense in depth. |
+| 4 | `ReportRequest` validator: enum/dict instead of an if-chain | Agree: `StrEnum` operations/scopes and a table of required/allowed fields per operation. Not a pydantic discriminated union: that would change the JSON schema the model sees. |
+| 5 | Delete-preview clauses: same | Agree: scope -> SQL clause table; named limits instead of `LIMIT 101/20/10`. |
+| 6 | `ReportLibrary.execute`: helpers/classes, dict dispatch | Agree: one handler method per operation, dispatch table, named limits (excerpt 1500, payload 9000, preview TTL 300 s, 100 IDs). |
+| 7 | Demographic validator needs a class | Agree: `DemographicQuery` with one method per rule group; allowed joins/dimensions as tables. |
+| 8 | `safety/`, `security/` as a whole | See step K. |
+
+Findings for 8: the split does not follow responsibility (`security/query_scope.py`
+rewrites SQL and imports `safety`; `safety/demographic_sql.py` also rewrites
+SQL with `add_cohort_guard`); SQL is parsed and validated twice per query
+(`QueryService` and again inside `apply_brand_scope`); `check_text` is a general
+sensitive-text check used by memory, reports, embeddings and Golden but lives in
+`result_guard.py`; `result_guard.py` imports `data.QueryResult` (safety depends on
+data) and can re-parse SQL to recover columns that `QueryService` always supplies;
+`validate_query` is one 60-line function; `_scoped_source` picks predicates with
+if/elif.
+
+Steps (one commit each; behaviour, error messages, prompts and model-facing
+schemas unchanged):
+
+- **H. Reports.** Comments 4-6. Done:
+  - `ReportOperation`/`DeleteScope` (`StrEnum`) and `_REQUEST_SHAPES`, a table
+    of the one filter each (operation, scope) needs. The model-facing fields stay
+    `Literal` (a test keeps them equal to the enums). On all 480 combinations of
+    operation, scope, title, query and report_id the new validator accepts and
+    rejects exactly as before; the first error message differs only when a
+    request breaks several rules (not shown to the model).
+  - Repository: `_DELETE_FILTERS` (scope -> clause, value) replaces the
+    if/elif; `MAX_SEARCH_RESULTS`, `MAX_LISTED`, `MAX_DELETE_IDS + 1` replace
+    `LIMIT 10/20/101`.
+  - `ReportLibrary.execute` dispatches to `_save`, `_search`, `_list`, `_open`,
+    `_prepare_delete` with a `_ReportCall` context; `SEARCH_EXCERPT_CHARS`,
+    `SEARCH_PAYLOAD_CHARS`, `DELETE_PREVIEW_SECONDS` name the numbers.
+  - Regression found and fixed: step F's `RememberRequest` docstring had entered
+    the JSON schema sent to Gemini (pydantic uses class docstrings as schema
+    descriptions). It is a comment again (schema equal to step E) and
+    `tests/support/agent_action_schema.json` is now a snapshot test of the whole
+    model-facing action schema.
+- **I. Memory.** Comments 1-2.
+- **J. Embedder.** Comment 3.
+- **K. SQL policy package.** `retail_agent/sql/` with `validator.py` (validate
+  once; forbidden node types as a table; table/column checks as functions),
+  `demographics.py` (`DemographicQuery` class, comment 7) and `scope.py` (brand
+  scope rewrite plus cohort guard; per-table predicates as a table; takes the
+  validated tree). `safety/` keeps output guards only: `result_guard.py`,
+  `sensitive_text.py` (`check_text`), `grounding.py`; `security/access.py`
+  stays. About 13 references in README/AGENTS/HLD are updated with it.
