@@ -1,4 +1,4 @@
-"""Shared demo entitlements for tests (mirrors access.example.json)."""
+"""Shared demo entitlements for tests (same shape as access.example.json, fictional brands)."""
 
 from retail_agent.security.access import Entitlements
 

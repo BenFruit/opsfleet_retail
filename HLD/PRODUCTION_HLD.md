@@ -29,7 +29,7 @@ not deployed. Setup and an example session are in the [README](../README.md).
 - **Data:** `bigquery-public-data.thelook_ecommerce` tables `orders`,
   `order_items`, `products`, `users`, read-only. The schema is fixed; brand scope
   is applied per table, not per dataset.
-- **PII rules (confirmed with Harry and Vlad, [STAKEHOLDER_POLICY.md](STAKEHOLDER_POLICY.md)):**
+- **PII rules (confirmed with Harry and Vlad of OpsFleet, [STAKEHOLDER_POLICY.md](STAKEHOLDER_POLICY.md)):**
   names, email, street address, postal code and coordinates never reach the model
   or the output; age, gender, city, state, country and traffic source only in
   aggregates; customers may be referred to by `user_id`; filtering on a
@@ -151,7 +151,8 @@ sequenceDiagram
             Q->>Q: rewrite every table to authorized brands, add cohort guard
             Q->>BQ: dry run, then capped execution (job id, timeout)
             BQ-->>Q: rows
-            Q->>A: result guard: shape, scalars, size, cohort check
+            Q-->>A: bounded rows
+            A->>A: result guard: shape, scalars, size, cohort check
             A->>A: observation, or safe error and repair (initial + 2)
         else answer
             A->>A: numeric grounding of prose figures
@@ -161,7 +162,7 @@ sequenceDiagram
         end
     end
     A->>A: append authoritative checked tables, scope line
-    A-->>API: answer (+ "Method: trio vN" when a precedent was used)
+    A-->>API: answer (the model cites "Method: trio vN" when it used a precedent)
     A--)PG: nothing is written unless the user asked to save or remember
     API-->>U: answer
     Note over A: every step logs turn_id/query_id events, optional trace spans
@@ -197,6 +198,58 @@ sequenceDiagram
 | Golden bucket | `golden/trios/*.json` in Git | Cloud Storage + PR review + ingestion job |
 | Observability | `logs/agent.jsonl`, metrics CLI, optional local Langfuse | Cloud Logging, Monitoring dashboards and alerts, redacted traces |
 | Persona | Public-link Google Doc (style only) | Authenticated persona console with versions |
+
+**As built:** the local prototype and its bounded planning loop.
+
+```mermaid
+flowchart LR
+    U["Operator CLI - implemented prototype"] --> APP["main.py -> ChatApplication -> AnalyticalAgent"]
+    ACCESS["Trusted startup manager-brand mapping"] --> APP
+    DOC["Optional style-only Google Doc"] --> APP
+    APP <--> LLM["Google Gemini API - remote"]
+    APP --> QS["QueryService: SQL policy, brand scope, dry run, capped execution"]
+    QS <--> BQ[("BigQuery TheLook - remote")]
+    APP <--> RM["Reports and user-memory modules"]
+    RM <--> PG[("reports-postgres: PostgreSQL 17 + pgvector")]
+    RM --> EMB["Google embedding API - remote"]
+    QS --> RG["Result guard in the agent: shape, scalars, size, cohort"]
+    RG --> APP
+    APP --> OUT["Guarded prose + checked tables"]
+    OUT --> U
+    APP -.-> LOG["Allowlisted local JSON logs"]
+    APP -.-> LF["Optional local Langfuse - raw payload privacy gap"]
+    LF --> STORE[("Independent Langfuse storage stack")]
+    BUCKET["golden/trios: reviewed Question-SQL-Report JSON"] --> INGEST["golden.ingest job: validate, dry run, embed changed, atomic publish"]
+    INGEST -->|"golden_ingest role: write"| PG
+    APP -->|"retail_agent role: read-only retrieval before planning"| PG
+    INGEST --> EMB
+    FUTURE["Real login and production services: NOT implemented"]
+```
+
+```mermaid
+flowchart TD
+    INPUT["CLI input"] --> CMD{"Direct command?"}
+    CMD -->|"confirm/cancel or memory commands"| DIRECT["Deterministic owner-scoped operation, no model"]
+    CMD -->|"ordinary question"| INIT["Cancel pending deletion; snapshot persona; load bounded memory; retrieve up to 3 Golden precedents; initialize budgets"]
+    INIT --> PLAN["plan: Gemini returns one validated action"]
+    PLAN --> ACT{"Action"}
+    ACT -->|query| QUERY["query: SQL policy, trusted scope, dry run, execute, result checks"]
+    ACT -->|report| REPORT["reports: parameterized library operation or deletion preview"]
+    ACT -->|remember| MEM["remember: explicit intent gate, embeddings, atomic owner write"]
+    QUERY --> OBS["Bounded observation and updated counters"]
+    REPORT -->|"search with results"| OBS
+    REPORT -->|"save, open, list, deletion preview, error"| OUT
+    MEM --> OBS
+    OBS --> BUDGET{"Budget remains and safe to continue?"}
+    BUDGET -->|yes| PLAN
+    BUDGET -->|no| STOP["Controlled stop with limitations"]
+    PLAN -->|"malformed action, at most two corrections"| PLAN
+    ACT -->|answer| FINAL["Text checks, checked tables and verified tool outcomes"]
+    STOP --> OUT["CLI response"]
+    FINAL --> OUT
+    DIRECT --> OUT
+    NOTE["SQL: initial attempt + two repairs; no blind ambiguous execution or write retries"] -.-> QUERY
+```
 
 ## 3. Technology choices
 
@@ -271,7 +324,7 @@ makes lineage-aware SQL validation possible.
 | Data | Store | Who can read/write | Notes |
 | --- | --- | --- | --- |
 | Transactions, products, customers | BigQuery (read-only) | Agent via QueryService only | Brand-scoped per table; PII columns blocked before execution |
-| Query observations | Process memory, then model context | Agent | Only result-guarded rows, max 200 rows / 256 KB per query |
+| Query observations | Process memory, then model context | Agent | At most 200 rows / 256 KB fetched per query; only result-guarded rows, at most 12,000 characters per observation, reach the model |
 | Conversation history | Process memory (prototype); Cloud SQL sessions (production) | Agent | Bounded: 6 turns / 20,000 characters |
 | Saved reports | PostgreSQL `saved_reports` | Owner, if current brands cover the report's brands | Snapshot of the previous answer with checked tables; embedding for search |
 | User memory | PostgreSQL `user_memories` | Owner | Max 20 entries x 200 characters; explicit consent; `/forget` |
@@ -305,7 +358,7 @@ data. Twelve trios cover the assignment's examples.
   a lexical match breaks ties, a 0.65 similarity threshold and top-3 limit apply
   within a prompt budget. Answers that follow a precedent end with
   `Method: <trio_id> v<version>`. If retrieval fails, planning continues without it.
-- **Evidence:** retrieval recall@3 0.96 on 30 English/Russian cases; answer
+- **Evidence:** retrieval recall@3 0.96 on 30 cases; answer
   evaluation judge pass rate 1.00 with Golden vs 0.70 without (0.60 in an earlier run).
 
 **Production:** Cloud Storage bucket, PR review by a second analyst, CI ingestion
@@ -314,7 +367,7 @@ for the 0.63-0.67 similarity overlap, trios promoted from flagged conversations.
 
 ### 5.2 Safety, PII and access
 
-**Implemented**, as layers that do not trust each other ([security-pii.mmd](security-pii.mmd)):
+**Implemented**, as layers that do not trust each other (diagram in [QUERY_SAFETY.md](QUERY_SAFETY.md#safety-layers)):
 
 1. **Input:** length limit; email/phone patterns rejected; CLI identity is
    fixed at startup and brands come from trusted config, never from chat.
@@ -356,7 +409,7 @@ Free-text PII detection beyond patterns (e.g. Cloud DLP) for inputs and traces.
 
 ### 5.3 High-stakes oversight: report deletion
 
-**Implemented** ([report-deletion.mmd](report-deletion.mmd)): "Delete all reports
+**Implemented** (flow diagram in [SAVED_REPORTS.md](SAVED_REPORTS.md#deletion-flow)): "Delete all reports
 mentioning Client X" or "...made in this conversation" produces a **preview**
 (literal match, conversation, ID or all; never vector similarity), capped at 100
 and frozen as exact IDs for 5 minutes. Only a separate `/confirm` command deletes,
@@ -401,7 +454,7 @@ flowchart TB
 ```
 
 **User level (Implemented):** explicit `remember` intent (model action plus a
-code-level check for "remember"/"запомни") stores short preferences such as
+code-level check for "remember") stores short preferences such as
 "prefers tables" or "brief answers", loaded into every turn as preferences, never
 as permissions. `/memories`, `/forget ID`, `/forget-all`. Known gaps: no
 supersession of conflicting preferences, no implicit learning of depth or format.
@@ -421,11 +474,11 @@ pull requests; the ingest job and evaluation gate publish; canary and rollback.
 
 | Failure | Behaviour | Status |
 | --- | --- | --- |
-| SQL syntax/semantic error, policy rejection | Safe reason + attempted SQL back to the model; initial attempt + 2 repairs; then an honest partial answer with the last checked result | Implemented; every dry-run rejection recovered in both eval runs (7 and 3) |
+| SQL syntax/semantic error, policy rejection | Safe reason + attempted SQL back to the model; initial attempt + 2 repairs; then an honest partial answer with the last checked result | Implemented; every dry-run rejection recovered in the final eval run |
 | Empty result | Reported as "no publishable rows" (may be suppression), model may revise filters it invented, never the user's | Implemented |
 | Premature answer after only failures | Forced repair instead of an answer without evidence | Implemented |
 | Invalid JSON / action from the model | Up to 2 corrections before any tool runs | Implemented |
-| Gemini 503 / 429 / connection error | One retry with backoff or Retry-After (<= 8 s), then one call to the fallback model | Implemented; exercised by a real Gemini 503 episode in the final eval (9 retries, 2 fallback answers, no failed turn) |
+| Gemini 503 / 429 / connection error | One retry with backoff or Retry-After (<= 8 s), then one call to the fallback model | Implemented; exercised by real Gemini 503 errors during the evaluation runs (in one run 9 retries and 2 fallback answers), never a failed turn |
 | Gemini timeout, daily quota, model not found | Straight to the fallback model | Implemented |
 | BigQuery timeout, quota, outage | Stop that query (no blind replay of possibly-billed jobs), cancel job by ID, partial answer | Implemented |
 | Cost | Dry run vs per-query cap (100 MB billed), per-turn 300 MB, row and size caps; unknown billing reserves the ceiling | Implemented |
@@ -437,6 +490,17 @@ pull requests; the ingest job and evaluation gate publish; canary and rollback.
 **Production adds:** end-to-end request deadlines, circuit breakers per
 dependency, admission control and per-tenant quotas, idempotency keys on writes.
 
+**Limits and timeouts (prototype values, all in code):**
+
+| Scope | Limit |
+| --- | --- |
+| Per turn | 7 model calls, 5 SQL attempts (3 consecutive failures stop), 2 action corrections, 5 report calls, 1 memory write, 300 MB scanned, 4,000-character question |
+| Per query | 100 MB billed, 20,000-character SQL, 200 rows and 256 KB fetched, 30 s job / 10 s API timeout |
+| Model context | 12,000 characters per observation, history of 6 turns / 20,000 characters, Golden: 3 precedents within 9,000 characters |
+| Gemini | 30 s request timeout, 2 attempts on the primary model, Retry-After honoured up to 8 s, then 1 fallback call; 4,096 output tokens |
+| Other services | Persona: 3 s, 16 KB, 4,000 characters; PostgreSQL: 3 s connect, 5 s statement (15 s for Golden ingestion); embeddings: 8,000-byte input |
+| Destructive and personal data | Deletion preview: 100 reports, 5 minutes; memory: 20 entries x 200 characters, 5 per request; demographic cohorts: 5 buyers (configurable, minimum 2) |
+
 ### 5.6 Quality assurance
 
 **Implemented** ([EVALUATION.md](EVALUATION.md)): 287 unit/integration tests;
@@ -445,8 +509,8 @@ reports, UX, safety) with deterministic checks (reference numbers from reviewed 
 under the same brand scope, required and forbidden SQL, numeric grounding, PII,
 refusal and access patterns) plus an LLM judge for intent coverage, caveats and
 actionability. The judge missed a wrong prose total, so numeric faithfulness is
-checked in code. Golden on/off A/B: 15/15 vs 14/15 deterministic, 1.00 vs 0.70
-judge pass rate (an earlier run on pre-refactoring code: 1.00 vs 0.60).
+checked in code. Golden on/off A/B: 15/15 vs 15/15 deterministic, 1.00 vs 0.70
+judge pass rate (earlier runs: 1.00 vs 0.60 and 1.00 vs 0.70).
 
 **Production:** 100-300 stratified cases from real questions, repeated runs, judge
 calibrated against analysts, release blocked on any safety or reference failure,
@@ -460,21 +524,23 @@ in-product feedback and implicit signals.
 `logs/agent.jsonl` (no prompts, SQL, rows or exception text). Correlation keys:
 `turn_id` on every turn event, `query_id` + `turn_id` on every query event.
 
-Agent-level metrics, computed by `python -m retail_agent.observability.metrics`
-(values from the 30 turns of the final evaluation run):
+Agent-level metrics, computed by `uv run python -m retail_agent.observability.metrics`
+(values from the 30 turns of the final evaluation run, read with
+`--log-file logs/eval-agent.jsonl`):
 
 | Metric | Why | Eval value |
 | --- | --- | --- |
 | Partial answer rate | Turns ending in a controlled stop | 0.0 |
-| SQL first-attempt success, recovery after error | Planner quality, repair effectiveness | 0.84, 1.00 |
-| Failures by code and stage | Where queries break (validation, dry run, execution) | 3 x `query_rejected` at dry run |
-| Model failures, retries, fallbacks, answering model | Provider health and fallback use | 9 retries after 503, 2 fallbacks (after 503 and after a timeout) |
-| Golden hit rate, top similarity, most used trios | Retrieval health and knowledge coverage | 0.87, p50 0.75 |
-| Ungrounded figures (repaired / noted) | Faithfulness risk | 2 repaired |
-| Latency p50/p95, model calls, SQL attempts, tokens, scanned MB per turn | UX and cost | 43.7 s / 104 s (Gemini incident, see EVALUATION.md), 1.87, 0.8, 9.1k, 15 MB |
+| SQL first-attempt success, recovery after error | Planner quality, repair effectiveness | 0.63, 1.00 (Golden off needs more repairs: 17 vs 11 attempts) |
+| Failures by code and stage | Where queries break (validation, dry run, execution) | 7 x `query_rejected` at dry run |
+| Model failures, retries, fallbacks, answering model | Provider health and fallback use | 2 retries after 503, 2 fallbacks |
+| Golden hit rate, top similarity, most used trios | Retrieval health and knowledge coverage | 0.87, p50 0.77 |
+| Ungrounded figures (repaired / noted) | Faithfulness risk | 1 repaired |
+| Latency p50/p95, model calls, SQL attempts, tokens, scanned MB per turn | UX and cost | 17.7 s / 85.7 s, 1.97, 0.93, 9.5k, 16 MB |
 | Report operations, confirmed deletions, dependency warnings | Destructive actions and degraded dependencies | per run |
 
-**Deep dive:** `--turn <turn_id>` prints the timeline of one turn (model calls
+**Deep dive:** `--turn <turn_id>` (IDs are in the `agent_turn_completed` events of
+`logs/agent.jsonl`) prints the timeline of one turn (model calls
 with tokens and chosen action, each query's dry run, execution, row counts and
 failure stage, retrieval, grounding repairs). With Langfuse enabled the same
 `turn_id` opens the full trace with prompts and model outputs (demo data only,
@@ -505,8 +571,9 @@ to run it depends on the organization's capacity and data rules:
 | Managed Langfuse Cloud | A data-processing agreement and region are acceptable | Lowest; masking still mandatory |
 | No LLM tracing platform: Cloud Logging + Cloud Trace with allowlisted events, plus sampled debug payloads in a restricted bucket | Neither of the above is available | Low; no prompt-level UI |
 
-The application only needs an OpenTelemetry-compatible exporter and keys from
-Secret Manager, so the choice is configuration, not code. Before tracing is
+The prototype calls the Langfuse SDK directly in `observability/tracing.py`
+(about 70 lines); the first two options need only configuration and keys from
+Secret Manager, the third replaces that module with an OpenTelemetry adapter. Before tracing is
 enabled by default under any option: masking through the SDK `mask` hook (reuse
 the contact-detail patterns, drop raw result rows, keep shapes and counts);
 separate spans for SQL validation, dry run and execution; domain signals as trace

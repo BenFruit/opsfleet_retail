@@ -5,8 +5,7 @@
   "question": "How has our revenue developed month by month over the last year?",
   "paraphrases": [
     "Show monthly revenue for the past 12 months",
-    "Revenue trend by month",
-    "Динамика выручки по месяцам за год"
+    "Revenue trend by month"
   ],
   "interpretation": "Revenue means completed item revenue: SUM(order_items.sale_price) with status 'Complete'. Use the last 12 FULL calendar months and exclude the current partial month, otherwise the last point looks like a false drop. Report orders and average order value next to revenue so growth can be split into volume and basket size.",
   "metric_definitions": [

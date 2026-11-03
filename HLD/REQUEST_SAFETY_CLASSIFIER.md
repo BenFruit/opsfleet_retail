@@ -11,7 +11,7 @@ the analytical LLM as an additional defense layer, not an authorization boundary
 2. Include ordinary retail questions, allowed demographic aggregates, prohibited
    individual demographic disclosure, direct PII extraction, access bypass,
    prompt injection, destructive-action confirmation bypass, and unrelated tasks.
-   Include Russian/English, typos, paraphrases and difficult near-boundary pairs.
+   Include typos, paraphrases and difficult near-boundary pairs.
 3. Give a strong teacher LLM the versioned stakeholder policy and relevant
    conversation/access context. Have it label requests `allow`, `deny`, or
    `uncertain`, with a policy reason/category. A restricted request is not proof

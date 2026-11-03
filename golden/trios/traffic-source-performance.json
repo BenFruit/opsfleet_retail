@@ -5,8 +5,7 @@
   "question": "Which acquisition channels bring the most valuable customers?",
   "paraphrases": [
     "Revenue by traffic source",
-    "Marketing channel performance",
-    "Какие каналы привлечения лучше?"
+    "Marketing channel performance"
   ],
   "interpretation": "Traffic source is a customer attribute and aggregate-only. Value per channel is spend per buyer, not total revenue, because large channels dominate totals. Attribution is the customer's signup source, not the source of each order.",
   "metric_definitions": [

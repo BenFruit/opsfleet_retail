@@ -5,8 +5,7 @@
   "question": "Who are our top customers by total spend?",
   "paraphrases": [
     "Top 20 customers by spend",
-    "Best customers ranking",
-    "Кто наши самые ценные клиенты?"
+    "Best customers ranking"
   ],
   "interpretation": "Rank customers by user_id only; names, emails and addresses are never used. Spend counts only completed purchases of the manager's authorized brands, not the customer's whole history. Demographic attributes must not be attached to individual customers.",
   "metric_definitions": [

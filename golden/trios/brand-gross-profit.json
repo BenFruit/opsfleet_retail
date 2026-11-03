@@ -5,8 +5,7 @@
   "question": "Which of our brands drove gross profit last month?",
   "paraphrases": [
     "Brand profitability last month",
-    "Margin by brand",
-    "Какие бренды дали больше всего прибыли?"
+    "Margin by brand"
   ],
   "interpretation": "Estimated gross profit is SUM(sale_price - product cost) for completed items, never cost minus price. Product cost is the current catalog cost, so label it an estimate. Use the previous full calendar month.",
   "metric_definitions": [

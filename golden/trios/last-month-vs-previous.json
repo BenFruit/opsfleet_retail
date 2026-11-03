@@ -5,8 +5,7 @@
   "question": "How did last month perform compared to the month before?",
   "paraphrases": [
     "Compare last month with the previous month",
-    "Month over month performance",
-    "Сравни прошлый месяц с позапрошлым"
+    "Month over month performance"
   ],
   "interpretation": "'Last month' is the previous FULL calendar month, compared like-for-like with the month before it, never with the current partial month. State the exact date boundaries. Compare completed revenue, orders, buyers and AOV, and show absolute and relative change.",
   "metric_definitions": [

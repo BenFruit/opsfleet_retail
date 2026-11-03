@@ -5,8 +5,7 @@
   "question": "Create a report for Q1 including insights and action items for Q2.",
   "paraphrases": [
     "Quarterly business review",
-    "Q3 report with recommendations",
-    "Сделай отчёт за квартал с рекомендациями"
+    "Q3 report with recommendations"
   ],
   "interpretation": "A quarter is a calendar quarter of the current year unless the user names a year; if it is not complete yet, say so and use the last complete quarter. A good report needs several queries: KPI by month inside the quarter versus the previous quarter, category mix and returns. Structure: executive summary, KPIs, drivers, risks, actions for the next quarter with owners. Separate evidence from hypotheses. Get quarter totals (revenue, orders, buyers) from a separate query without the category breakdown; never add category rows together in prose, because orders and buyers are not additive across categories and mental sums are error-prone.",
   "metric_definitions": [

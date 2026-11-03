@@ -5,13 +5,3 @@
 /logs/
 __pycache__/
 *.pyc
-# Exploratory local utilities (not part of the CLI; may contain local project IDs)
-/inspect_schema.py
-/inspect_schema.ipynb
-/inspect_scope.py
-/inspect_sql.py
-/access.example copy.json
-# Local working notes and AI-agent instructions (not part of the deliverable)
-/dev-notes/
-/AGENTS.md
-/CLAUDE.md

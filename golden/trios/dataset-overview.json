@@ -5,8 +5,7 @@
   "question": "What data is available and what can we analyze with it?",
   "paraphrases": [
     "Describe the database",
-    "What tables do we have?",
-    "Какие данные доступны для анализа?"
+    "What tables do we have?"
   ],
   "interpretation": "Answer schema questions from the provided schema, without inventing tables. Explain the four tables, their grain and the access rules: product and order data are scoped to authorized brands, customer demographics are aggregate-only, direct contact details are never available. Optionally run one cheap query for the covered date range and volume.",
   "metric_definitions": [

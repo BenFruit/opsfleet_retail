@@ -24,9 +24,14 @@ class MemoryPolicyTests(unittest.TestCase):
         self.memory = UserMemory(self.repo, self.embedder, manager_id="manager_a")
 
     def test_explicit_intent_not_one_off_or_negated(self):
-        for text in ("Use bullets, remember this.", "Запомни: предпочитаю списки."):
+        for text in ("Use bullets, remember this.", "Please remember: I prefer lists."):
             self.assertTrue(explicit_remember(text))
-        for text in ("This report in bullets.", "Do not remember this.", "Don't remember my name.", "Не запоминай это"):
+        for text in (
+            "This report in bullets.",
+            "Do not remember this.",
+            "Don't remember my name.",
+            "Never remember this.",
+        ):
             self.assertFalse(explicit_remember(text))
         with self.assertRaises(UserMemoryError):
             self.memory.remember(

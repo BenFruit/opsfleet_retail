@@ -8,7 +8,8 @@ flowchart TD
     ACT -->|report| REPORT["reports: parameterized library operation or deletion preview"]
     ACT -->|remember| MEM["remember: explicit intent gate, embeddings, atomic owner write"]
     QUERY --> OBS["Bounded observation and updated counters"]
-    REPORT --> OBS
+    REPORT -->|"search with results"| OBS
+    REPORT -->|"save, open, list, deletion preview, error"| OUT
     MEM --> OBS
     OBS --> BUDGET{"Budget remains and safe to continue?"}
     BUDGET -->|yes| PLAN

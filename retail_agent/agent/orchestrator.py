@@ -281,7 +281,7 @@ class AnalyticalAgent:
         }
 
     def _model_failure(self, state: AgentState, error: Exception, started: float) -> dict:
-        """Invalid JSON/actions get one bounded retry; other model failures stop the turn."""
+        """Invalid JSON/actions get up to two bounded corrections; other model failures stop the turn."""
         if isinstance(error, ResultGuardError):
             code, message, metadata = (
                 "model_output_withheld",

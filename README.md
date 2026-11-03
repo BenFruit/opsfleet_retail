@@ -35,8 +35,14 @@ You need: [uv](#why-uv) (installs Python 3.13 for you), the
 [Google Cloud CLI](https://cloud.google.com/sdk/docs/install), Docker (Docker
 Desktop on Windows/macOS), a Google Cloud project with the BigQuery API enabled
 (the free tier is enough) and a Gemini API key from
-[Google AI Studio](https://aistudio.google.com/apikey). Run every command from the
-repository root.
+[Google AI Studio](https://aistudio.google.com/apikey). Local port 5433 must be
+free for the database container. Clone the repository and run every command from
+its root:
+
+```bash
+git clone <this repository's URL> opsfleet_retail
+cd opsfleet_retail
+```
 
 ### 1. Install uv
 
@@ -76,24 +82,27 @@ Copy-Item access.example.json access.local.json
 
 Then edit both files:
 
-- `.env`: `GEMINI_API_KEY`, `GEMINI_MODEL` (a model enabled in your AI Studio
-  project, e.g. a current Flash-Lite model), optionally `GEMINI_FALLBACK_MODEL`
-  (e.g. a current Flash model), and `GOOGLE_CLOUD_PROJECT`.
-- `access.local.json`: map demo managers to exact brand names from the dataset,
-  e.g. `{"manager_a": ["Calvin Klein", "Nautica", "Tommy Hilfiger"]}`. This is
-  trusted startup configuration that simulates entitlements; it is not
-  authentication.
+- `.env`: set `GEMINI_API_KEY` and `GOOGLE_CLOUD_PROJECT` (the Google Cloud
+  project that runs and pays for BigQuery jobs; the dataset itself is public).
+  `GEMINI_MODEL=gemini-3.5-flash-lite` and `GEMINI_FALLBACK_MODEL=gemini-3.6-flash`
+  are preset: the models this was tested with on 3 November 2026. If your AI
+  Studio project offers other models, use a current Flash-Lite and Flash model.
+- `access.local.json` works as copied: `manager_a` sees Calvin Klein, Nautica and
+  Tommy Hilfiger, `manager_b` sees Levi's and Columbia. Brand names must match the
+  `products.brand` column exactly. This is trusted startup configuration that
+  simulates entitlements; it is not authentication.
 
 ### 4. Google credentials for BigQuery
 
 ```bash
 gcloud auth application-default login
-gcloud auth application-default set-quota-project YOUR_PROJECT_ID
+gcloud auth application-default set-quota-project YOUR_PROJECT_ID   # attributes API quota to your project
+gcloud services enable bigquery.googleapis.com --project YOUR_PROJECT_ID
 ```
 
 ### 5. Database, Golden Knowledge index and chat
 
-The same commands on every OS:
+The same commands in bash and PowerShell:
 
 ```bash
 docker compose up -d --wait reports-postgres     # PostgreSQL 17 + pgvector; migrations run on first start
@@ -101,10 +110,12 @@ uv run python -m retail_agent.golden.ingest      # validates, embeds and publish
 uv run python main.py --manager manager_a        # start chatting; /help lists commands, /exit quits
 ```
 
-The application database is optional for plain analysis: without it, reports,
-memory and Golden precedents are unavailable and the agent says so. If a step
-fails at startup, the CLI prints the failing stage and a hint (see
-[Troubleshooting](#troubleshooting)).
+An answer takes from a few seconds to about a minute: each question needs two to
+four Gemini calls, so the time follows Gemini's current latency. The application
+database is optional for plain analysis: without it, reports, memory and Golden
+precedents are unavailable and the agent says so. If a step fails at startup, the
+CLI prints the failing stage and a hint (see [Troubleshooting](#troubleshooting)).
+Stop the database with `docker compose down` (never add `-v`: it deletes the data).
 
 ### Check without credentials
 
@@ -113,6 +124,9 @@ The test suite needs no Google account and no paid calls:
 ```bash
 uv run python -m pytest
 ```
+
+It reports 283 passed and 4 skipped: the 4 PostgreSQL tests run only with
+`RETAIL_TEST_POSTGRES=1` and the database from step 5 (287 tests in total).
 
 ## Why uv
 
@@ -210,18 +224,20 @@ Analyst: Deleted 1 of 1 previewed reports. Ownership/access were checked again.
 You: /exit
 ```
 
-What happened behind it: each question retrieved a Golden precedent (cited as
-`Method:`), the SQL was validated and restricted to the three brands before
+What happened behind it: each question retrieved a Golden precedent (the model
+cites it as `Method:`, as its instructions require), the SQL was validated and restricted to the three brands before
 running, the tables were rendered by the application from checked results, the
 email request was refused without any query, and deletion needed the separate
 `/confirm`. One honest imperfection: "averaging approximately 53.4%" is the
 model's own average of the six margins (exactly 53.5%). Money and count figures
-in prose are verified against checked results; derived percentages are not. `python -m retail_agent.observability.metrics --turn <turn_id>` shows
-the event timeline of any of these turns.
+in prose are verified against checked results; derived percentages are not.
+`uv run python -m retail_agent.observability.metrics --turn <turn_id>` shows the
+event timeline of any turn; turn IDs are in the `agent_turn_completed` events of
+`logs/agent.jsonl`.
 
 ## Using the CLI
 
-Ask analytical questions and follow-ups in English or Russian, for example:
+Ask analytical questions and follow-ups in plain English, for example:
 
 ```text
 What data is available and what can I analyze?
@@ -242,7 +258,7 @@ Delete all reports mentioning Q3 review      -> preview only
 /confirm                                      -> deletes exactly the previewed IDs
 ```
 
-**Preferences.** Persistent only when asked explicitly ("remember"/"запомни"):
+**Preferences.** Persistent only when asked explicitly ("remember"):
 
 ```text
 Use bullet points and short answers, remember this.
@@ -269,6 +285,7 @@ change it with `--min-cohort-size N` (minimum 2).
 | `GOOGLE_CLOUD_PROJECT` | BigQuery billing/quota project |
 | `RETAIL_MANAGER_ID` | Default demo manager (overridden by `--manager`) |
 | `REPORTS_POSTGRES_*` | Application database; defaults match Docker Compose |
+| `REPORTS_EMBEDDING_MODEL` | Embedding model for reports, memory and Golden (only `gemini-embedding-2` is supported) |
 | `GOLDEN_RETRIEVAL_ENABLED`, `GOLDEN_MIN_SIMILARITY` | Golden retrieval on/off and threshold (default 0.65) |
 | `GOLDEN_INGEST_POSTGRES_*` | Writer role used only by the ingestion job |
 | `PERSONA_GOOGLE_DOC_ID` | Optional style document |
@@ -281,8 +298,11 @@ is looked up in the current directory, so run commands from the repository root.
 Empty values use the defaults; booleans accept `true`/`false` (also `1`/`0`,
 `yes`/`no`); an invalid value stops startup and names only the variable.
 
-All limits (model calls, SQL attempts, bytes, rows, timeouts) are listed in the
-[design §2.2 and §5.5](HLD/PRODUCTION_HLD.md#55-resilience-and-error-handling).
+CLI flags: `--manager` (demo identity), `--project` (overrides
+`GOOGLE_CLOUD_PROJECT`), `--access-config` (default `access.local.json`),
+`--log-file` (default `logs/agent.jsonl`) and `--min-cohort-size` (default 5,
+minimum 2). All limits and timeouts are in one table in the
+[design §5.5](HLD/PRODUCTION_HLD.md#55-resilience-and-error-handling).
 
 ## Tests, evaluation and metrics
 
@@ -294,6 +314,7 @@ uv run ruff check . ; uv run ruff format --check .         # lint and formatting
 RETAIL_TEST_POSTGRES=1 uv run python -B -m pytest           # + real PostgreSQL/pgvector (bash)
 # PowerShell: $env:RETAIL_TEST_POSTGRES='1'; uv run python -B -m pytest; Remove-Item Env:RETAIL_TEST_POSTGRES
 
+uv run python -m retail_agent.golden.ingest --check-only  # validate the Golden trios offline
 uv run python -m retail_agent.golden.evaluate              # retrieval quality (paid embeddings)
 uv run python -m retail_agent.evaluation.answers           # live answer evaluation (paid calls)
 uv run python -m retail_agent.evaluation.answers --no-golden
@@ -304,8 +325,8 @@ uv run python -m retail_agent.observability.metrics --turn <turn_id>
 
 Latest results (final code, 3 November 2026): 287 tests pass (including
 PostgreSQL); retrieval recall@3 0.96; answer evaluation 15/15 deterministic checks
-and 100% judge pass with Golden Knowledge versus 14/15 and 70% without
-([HLD/EVALUATION.md](HLD/EVALUATION.md)).
+and 100% judge pass with Golden Knowledge versus 15/15 and 70% without
+([HLD/EVALUATION.md](HLD/EVALUATION.md); raw results in [evals/results/](evals/results/)).
 Setup was also verified from a fresh clone on Windows, including a fresh
 database volume (migrations 001-004), Golden ingestion and a CLI question. The
 macOS/Linux commands are the standard equivalents and were not run on those systems.
@@ -325,8 +346,8 @@ results and are not redacted: use demo data only. Stop with `docker compose down
 
 ## Troubleshooting
 
-- **Startup failed at stage X:** `access_config` -> copy and edit
-  `access.local.json`; `gemini_client` -> check `.env`; `bigquery_client` or
+- **Startup failed at stage X:** `logging` -> the log directory is not writable;
+  `access_config` -> copy `access.local.json` from the example; `gemini_client` -> check `.env`; `bigquery_client` or
   `bigquery_schema` -> run the two `gcloud auth application-default` commands and
   check the project; `agent_init` -> check the optional settings.
 - **Model errors** are shown with a code: `model_unavailable` / `model_rate_limited`
@@ -336,8 +357,11 @@ results and are not redacted: use demo data only. Stop with `docker compose down
 - **Existing database volume** created before a migration: apply missing
   migrations in order, without deleting data, e.g.
   `docker compose exec -T reports-postgres psql -U postgres -d retail_agent -v ON_ERROR_STOP=1 < docker/reports-postgres/004_golden_knowledge.sql`
-  (PowerShell: pipe `Get-Content <file> -Raw` into the same command; same for 002
-  and 003). Fresh volumes run all of them automatically.
+  (same for 002 and 003). In PowerShell:
+  `Get-Content docker/reports-postgres/004_golden_knowledge.sql -Raw | docker compose exec -T reports-postgres psql -U postgres -d retail_agent -v ON_ERROR_STOP=1`.
+  Fresh volumes run all of them automatically.
+- **Port 5433 already in use:** another PostgreSQL is listening there; stop it,
+  or change the published port in `docker-compose.yaml` and `REPORTS_POSTGRES_PORT`.
 - **"Your application has authenticated using end user credentials ... without a
   quota project"**: run `gcloud auth application-default set-quota-project`.
 
@@ -374,4 +398,4 @@ tests/support/               demo entitlements, repository paths and agent-state
 
 Git does not carry local data: reports, memories, the Golden index, traces and
 credentials stay on the machine that created them. A new machine starts empty;
-rerun step 6 to rebuild the index.
+rerun the ingest command from step 5 to rebuild the index.

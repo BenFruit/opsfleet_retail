@@ -4,8 +4,8 @@ import re
 import unicodedata
 from hashlib import sha256
 
-_NEGATED = re.compile(r"\b(?:do not|don't|never)\s+remember\b|\bне\s+запом", re.I)
-_EXPLICIT = re.compile(r"\bremember\b|\bзапомни(?:те)?\b", re.I)
+_NEGATED = re.compile(r"\b(?:do not|don't|never)\s+remember\b", re.I)
+_EXPLICIT = re.compile(r"\bremember\b", re.I)
 
 
 def explicit_remember(question: str) -> bool:

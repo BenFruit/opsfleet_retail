@@ -10,9 +10,9 @@ observations. Explicit generation observations capture Gemini prompt/system
 instruction, validated actions and token usage under the corresponding planning
 step. Root metadata contains `turn_id` for correlation with `logs/agent.jsonl`.
 `observability/tracing.py` owns opt-in initialization, callbacks and shutdown.
-No LangSmith SDK wrapper is used, and implicit LangSmith export stays disabled
-even if stale `LANGSMITH_TRACING` variables remain in the environment. The
-LangSmith package is still a transitive dependency of LangGraph.
+No LangSmith tracing is used: `langsmith` is a declared dependency only so the
+agent can switch its tracing context off, which keeps implicit export disabled
+even if stale `LANGSMITH_TRACING` variables remain in the environment.
 
 Enable explicitly with `LANGFUSE_TRACING_ENABLED=true`, local project public and
 secret keys, and `LANGFUSE_BASE_URL=http://localhost:3000`. There is no fallback
@@ -35,9 +35,9 @@ teams, each with its own organization, project and API keys. The root Compose
 file runs a private copy only to develop and demo locally. In production, using
 it depends on the organization: a shared self-hosted instance run by a platform
 team, managed Langfuse Cloud, or no LLM tracing platform (Cloud Logging and Cloud
-Trace only). The options and trade-offs are in PRODUCTION_HLD.md §5.7. The
-application needs only an OpenTelemetry-compatible exporter and keys, so the
-choice is configuration.
+Trace only). The options and trade-offs are in PRODUCTION_HLD.md §5.7. Both Langfuse
+options are configuration only; Cloud Trace without Langfuse needs an
+OpenTelemetry adapter in place of `observability/tracing.py`.
 
 ## Deferred: PII-safe trace export (required before production)
 

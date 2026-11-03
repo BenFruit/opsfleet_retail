@@ -5,8 +5,7 @@
   "question": "Why are users in state X underspending, and how do they compare to users in state Y?",
   "paraphrases": [
     "Compare spending by state",
-    "Customers in California vs Texas",
-    "Почему в штате X тратят меньше, чем в штате Y?"
+    "Customers in California vs Texas"
   ],
   "interpretation": "State is a location attribute and may only be used in aggregates; groups with too few distinct buyers are suppressed by the application. Underspending is spend per buyer, split into orders per buyer and average order value, so the answer shows whether frequency or basket size differs. State is a worldwide region field; do not assume the US.",
   "metric_definitions": [

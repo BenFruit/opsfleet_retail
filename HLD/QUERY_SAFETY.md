@@ -1,20 +1,38 @@
-# Current prototype: unified SQL, structural safety and bounded repairs
+# Query safety: unified SQL, structural checks and bounded repairs
 
 ## Decision
 
 Model actions are `query`, `report`, `remember`, `answer`. The model writes SQL for BOTH
-ordinary and demographic analytics. The former typed `demographic` action and
-its dimensions/metric SQL builder were removed: they unnecessarily required code
-changes for new business groupings. Demographic policy still exists in the data
-layer; removing a tool does not remove privacy constraints.
+ordinary and demographic analytics. A separate typed demographic tool with fixed
+dimensions was considered and rejected: every new business grouping would need a
+code change. Demographic privacy is enforced on the SQL itself instead (below).
 Explicit owner-scoped operator memory is documented separately in USER_MEMORY.md;
 it is not a route to customer PII, authorization changes or tool-policy overrides.
 
 For example, five-year intervals use `FLOOR(u.age/5)*5` and `...+4` in GROUP BY.
 Ten-year intervals, CASE-based dimensions, rounding and ratios of approved
-aggregates do not need new request fields. The source snapshot of the earlier
-V1 validator remains in [archive/](archive/sql-demographic-validator-v1.md);
-it is historical reference, not current source or a production security proof.
+aggregates do not need new request fields.
+
+## Safety layers
+
+```mermaid
+flowchart TB
+    POLICY["Curated column policy: allowed / aggregate-only / blocked PII / blocked unscoped"] --> AST
+    REQ["Checked user input + startup identity"] --> MODEL["Gemini proposes SQL"]
+    MODEL --> AST["SQLGlot source, column and AST validation"]
+    AST --> DEMO["If demographic: flat aggregate shape + canonical joins + common contributor guard"]
+    DEMO --> SCOPE["Rewrite EVERY physical source to authorized brands and approved columns"]
+    RIGHTS["Trusted brand parameters"] --> SCOPE
+    SCOPE --> DRY["Dry run, billed-byte cap and execution bounds"]
+    DRY --> BQ[("BigQuery")]
+    BQ --> RESULT["Result guard in the agent: cohort recheck, shape, scalar, size and text checks"]
+    RESULT --> SAFE["Only checked bounded observations to Gemini"]
+    SAFE --> ANSWER["Final text checks + app-rendered checked tables"]
+    AST -->|reject| ERROR["Controlled feedback; bounded safe repair"]
+    DEMO -->|reject| ERROR
+    RESULT -->|reject| ERROR
+    GAP["NOT solved: cross-question inference, comprehensive free-text PII and raw optional Langfuse export"]
+```
 
 ## Shared SQL boundary
 
@@ -67,9 +85,9 @@ mandated number. It applies to demographic queries only. Empty output can mean
 no data OR suppression; rankings include publishable groups only. Do not sum
 overlapping group buyer counts or reconstruct suppressed bins from partial rows.
 
-AVG(users.age) over purchase joins is now PURCHASE-WEIGHTED. The former structured
-tool computed distinct-buyer means; that semantic difference is explicit in model
-instructions and observation context. No universal metric correctness is claimed.
+AVG(users.age) over purchase joins is PURCHASE-WEIGHTED (each purchase counts),
+not a distinct-buyer mean; this is stated in the model instructions and in the
+observation context. No universal metric correctness is claimed.
 
 ## Two automatic repairs
 

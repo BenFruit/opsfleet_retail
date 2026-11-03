@@ -1,6 +1,6 @@
 # Confirmed access and demographic policy
 
-Source: user-provided Slack replies from Harry and Vlad. These clarifications
+Source: Slack clarifications from Harry and Vlad (OpsFleet). These clarifications
 resolve earlier policy questions. They do not imply every rule is
 already implemented; see implementation status below.
 
@@ -36,14 +36,14 @@ already implemented; see implementation status below.
   The default
   is 5 distinct contributing buyers (CLI --min-cohort-size, minimum 2), not a
   client-mandated threshold. Ordinary product revenue is not suppressed.
-  See QUERY_SAFETY.md for the current contract and archive/ for the old approach.
+  See QUERY_SAFETY.md for the contract.
 - Generic free-text PII detection is not solved by the current email/phone checks.
 - Cross-question inference remains a documented production concern, not a planned
   prototype subsystem.
 
 ## Separate operator-profile decision (not a stakeholder clarification)
 
-The developer approved remembering an analyst/operator's own voluntarily supplied
+Design decision: the agent may remember an analyst/operator's own voluntarily supplied
 name on explicit request. This is self-declared profile context, never verified
 identity or access permission. It does NOT relax the customer-dataset PII rules
 above. The feature sends selected operator memory to Gemini/embedding APIs; see

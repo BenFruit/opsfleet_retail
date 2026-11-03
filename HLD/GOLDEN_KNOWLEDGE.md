@@ -15,7 +15,7 @@ validated by `retail_agent/golden/models.py`:
 | Field | Purpose |
 | --- | --- |
 | `id`, `version`, `status` | Stable slug, monotonic version, `approved` or `withdrawn` |
-| `question`, `paraphrases` | How executives ask it (English and Russian) |
+| `question`, `paraphrases` | How executives ask it |
 | `interpretation` | The analyst's reading: definitions, period rules, pitfalls, privacy constraints |
 | `metric_definitions`, `grain` | Exact formulas and the level of aggregation |
 | `sql` | Reviewed BigQuery SQL; relative dates (`CURRENT_DATE()`), no parameters, no brand filter |
@@ -35,7 +35,9 @@ correctness and policy compliance.
 
 ## Ingestion: how the bucket is updated over time
 
-`uv run python -m retail_agent.golden.ingest` (see README for flags):
+`uv run python -m retail_agent.golden.ingest` (`--check-only` validates files without
+network calls, `--bigquery-dry-run` also dry-runs every SQL, `--bucket` points to
+another folder):
 
 1. **Validate the whole bucket first.** Schema, file name equals id, unique ids,
    no contact-detail patterns, and every SQL passes the SAME policy as model SQL:
@@ -76,7 +78,7 @@ failures, not from the developer noticing (see "System learning" below).
   prefixed with the previous question so "and by month?" keeps its intent.
 - **Hybrid scoring:** pgvector cosine similarity selects 10 candidates; a
   lexical `ts_rank` OR-match adds at most 0.05 to break near-ties. Semantic
-  similarity decides relevance, so Russian questions still match English trios.
+  similarity decides relevance, so a paraphrase still matches its trio.
 - **Threshold and top-k:** candidates below `GOLDEN_MIN_SIMILARITY` (default 0.65)
   are dropped; at most 3 are kept within a 9,000-character prompt budget.
 - **Prompt contract:** the planner receives `golden_examples` with id, version,
@@ -95,25 +97,33 @@ failures, not from the developer noticing (see "System learning" below).
 ## Evaluation and calibration
 
 `uv run python -m retail_agent.golden.evaluate` embeds 30 cases from
-`golden/eval/retrieval_cases.json`: 24 unseen phrasings (12 English, 12 Russian)
+`golden/eval/retrieval_cases.json`: 24 unseen phrasings
 with the trio an analyst would expect, and 6 negatives (greeting, memory request,
-report deletion, weather, poem, report listing). Live results (3 November 2026):
+report deletion, weather, poem, report listing). Live results on the final trios
+(3 November 2026; full output in `evals/results/`):
 
 | Threshold | hit@1 | recall@3 | Negative false-positive rate |
 | --- | --- | --- | --- |
-| 0.60 | 0.96 | 1.00 | 0.67 |
-| 0.65 | 0.92 | 0.96 | 0.33 |
-| 0.69 | 0.88 | 0.88 | 0.00 |
+| 0.60 | 1.00 | 1.00 | 0.67 |
+| 0.65 | 0.96 | 0.96 | 0.33 |
+| 0.66 | 0.96 | 0.96 | 0.00 |
+| 0.70 | 0.88 | 0.88 | 0.00 |
 
-Positives scored 0.63-0.81 at the top, negatives 0.54-0.67, so a single threshold
+Positives scored 0.63-0.83 at the top, negatives 0.53-0.66, so a single threshold
 cannot separate them perfectly. 0.65 was chosen because a missed precedent hurts
 answer quality more than an extra precedent on chit-chat, which the planner is
-told to ignore. Thirty cases is an initial calibration, not proof of generalization;
-the threshold was chosen on the same set it is reported on.
+told to ignore. On this set 0.66 would remove the two negative matches (0.654 and
+0.655) at no recall cost, but a margin of one hundredth on 30 cases is too thin to
+retune on; a larger set decides that. Thirty cases is an initial calibration, not
+proof of generalization; the threshold was chosen on the same set it is reported on.
+The evaluation ranks by vector similarity alone; at runtime a lexical match adds at
+most 0.05 to break near-ties, which can reorder close candidates but does not
+change which ones pass the threshold.
 
-Live smoke (Gemini + BigQuery, read-only): both assignment questions retrieved
-the expected trio first (similarity 0.85 and 0.79), and the answers cited
-`Method: customer-churn-proxy v1` and `Method: state-spend-comparison v1`.
+Live smoke (Gemini + BigQuery, read-only, before `customer-churn-proxy` moved to
+v2): both assignment questions retrieved the expected trio first (similarity 0.85
+and 0.79), and the answers cited `Method: customer-churn-proxy v1` and
+`Method: state-spend-comparison v1`.
 
 ## Production design (not deployed)
 

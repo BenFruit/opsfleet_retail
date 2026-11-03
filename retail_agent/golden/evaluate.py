@@ -2,7 +2,7 @@
 
     uv run python -m retail_agent.golden.evaluate
 
-Each case is an unseen phrasing (English or Russian) with the trio an analyst
+Each case is an unseen phrasing with the trio an analyst
 expects, or null when nothing should be retrieved (chit-chat, memory, report
 commands). Reports hit@1, recall@3, the false-positive rate on negatives and
 the threshold that best separates them. Costs one embedding call per case.

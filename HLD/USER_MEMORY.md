@@ -11,14 +11,14 @@ embedding, embedding model, source turn ID and creation timestamp. It lives in
 `remember` is an explicit model intention with at most 5 strings per call and one
 write attempt per user turn. The model extracts only directly stated preferences
 or permitted self-declared operator profile facts. Code validates the payload and
-requires an explicit current-question marker (`remember` / `запомни`). Ordinary
+requires an explicit current-question marker (`remember`). Ordinary
 one-off formatting does not authorize persistence; negative requests are rejected.
 This lexical gate supplements model intent classification; it is NOT a semantic
 proof against quoted instructions or a complete sensitive-data classifier.
 
 The operator's own name may be remembered when THEY explicitly ask for it. This
-is a user-approved profile exception, not permission to store/expose customer PII
-or a statement that Harry/Vlad approved operator-profile collection. Stored names
+is a design decision for the operator's own profile, not permission to store or
+expose customer PII, and not a stakeholder ruling. Stored names
 are self-reported, not verified identity, authorization claims or entitlements.
 Customer names/demographics, contact details, credentials, transaction results and
 instructions to bypass safety are outside this feature. Email/phone patterns are
@@ -113,8 +113,8 @@ current question lacked explicit persistence intent. The old preference remained
 
 Updating/superseding a stored preference is not implemented. An explicit new
 preference may coexist with a contradictory old one; vector similarity is not
-conflict resolution. The developer declined fixes at this stage. Do not silently
-relax the gate, add replacement semantics or modify existing user data. Current-turn
+conflict resolution. This is deliberately left as is in the prototype; the
+production design is in PRODUCTION_HLD.md §5.4. Current-turn
 preference precedence is an instruction to the model, not a guaranteed behavior.
 
 This is user-level memory, NOT automatic system learning or persona administration.

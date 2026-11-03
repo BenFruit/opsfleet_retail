@@ -5,8 +5,7 @@
   "question": "How does spending differ by customer age group?",
   "paraphrases": [
     "Revenue by age bands",
-    "Which age group buys the most?",
-    "Как тратят клиенты разных возрастов?"
+    "Which age group buys the most?"
   ],
   "interpretation": "Age is aggregate-only. Group in SQL with computed bands (10-year bands via FLOOR(age/10)*10) at the requested grain; never retrieve exact ages and re-bin in prose. Report buyers and spend per buyer, because raw revenue mostly reflects group size.",
   "metric_definitions": [

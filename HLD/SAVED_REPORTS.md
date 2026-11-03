@@ -15,8 +15,6 @@ evidence and persistent conversational memory are future improvements only.
 `reports-postgres` uses PostgreSQL 17 with pgvector, a dedicated
 `reports_postgres_data` volume and a non-superuser `retail_agent` role. Only
 127.0.0.1:5433 is exposed. Langfuse's PostgreSQL and volume are independent.
-MySQL was an explored alternative; its empty container was removed and volume
-preserved. It is not used by the application.
 
 Reports contain ID, owner, conversation ID, title, text, creation timestamp,
 768-dimensional embedding, embedding model ID and trusted brand scope. Google
@@ -35,8 +33,8 @@ Embedding is obtained before the database transaction. Text/vector are inserted
 atomically. A write is never retried automatically; ambiguous failures ask the
 user to inspect the library before retrying. Storage is lazy and bounded by
 connection/statement timeouts; its outage does not prevent ordinary analysis.
-Fresh volumes run all three SQL init scripts (001 reports, 002 vectors, 003 user
-memory). Existing volumes need missing migrations applied in order as described
+Fresh volumes run all four SQL init scripts (001 reports, 002 vectors, 003 user
+memory, 004 Golden index). Existing volumes need missing migrations applied in order as described
 in README, not volume deletion.
 
 ## Ownership, provenance and retrieval
@@ -57,6 +55,23 @@ model must cite IDs/titles/dates and treat report content as untrusted historica
 evidence, not tool instructions. Open prints the original bounded document.
 
 ## Strict destructive oversight
+
+<a id="deletion-flow"></a>
+
+```mermaid
+flowchart TD
+    U["Delete request under trusted demo identity"] --> FIND["Owner and current-brand-scoped literal / ID / conversation / all lookup"]
+    FIND --> CAP{"At most 100 matches?"}
+    CAP -->|no| NARROW["Require narrower scope; no partial deletion"]
+    CAP -->|yes| PREVIEW["Show IDs, titles, count; freeze exact IDs in process for 5 minutes"]
+    PREVIEW --> ASK{"Separate exact /confirm?"}
+    ASK -->|"cancel / new question / reset / restart / expiry"| CANCEL["Invalidate preview; no deletion"]
+    ASK -->|yes| VERIFY["Consume pending approval; bypass Gemini"]
+    VERIFY --> DELETE["Transaction: recheck owner and current brands; delete frozen IDs only"]
+    DELETE -->|"confirmed commit"| DONE["Report actual deleted count"]
+    DELETE -->|"error or uncertain commit"| FAIL["No success claim; inspect library before fresh preview"]
+    NOTE["Real login and durable signed tokens are production proposals, not current implementation"] -.-> VERIFY
+```
 
 `prepare_delete` selects literal text matches, an exact report ID, current
 conversation, or all accessible owned documents. It never executes DELETE and

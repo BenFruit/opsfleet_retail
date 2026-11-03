@@ -5,8 +5,7 @@
   "question": "Which categories have the highest return rates?",
   "paraphrases": [
     "Returns analysis",
-    "Where are customers returning products?",
-    "Какие категории чаще возвращают?"
+    "Where are customers returning products?"
   ],
   "interpretation": "Return rate is returned items divided by all non-cancelled items in the period, by category. Only report categories with enough volume to be meaningful and show the item count next to the rate. Lost revenue is the sale price of returned items.",
   "metric_definitions": [

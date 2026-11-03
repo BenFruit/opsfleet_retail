@@ -20,7 +20,9 @@ documents below are deep dives it links to.
 
 ## Diagrams (Mermaid)
 
-The first three are embedded in PRODUCTION_HLD.md (a test keeps them in sync).
+Every diagram is embedded in a document so GitHub renders it; a test keeps the
+embedded copies equal to these sources. The first five are in PRODUCTION_HLD.md,
+security-pii in QUERY_SAFETY.md and report-deletion in SAVED_REPORTS.md.
 
 - [production-hld.mmd](production-hld.mmd): production serving architecture on Google Cloud.
 - [request-sequence.mmd](request-sequence.mmd): one question end to end.
@@ -31,8 +33,3 @@ The first three are embedded in PRODUCTION_HLD.md (a test keeps them in sync).
 - [report-deletion.mmd](report-deletion.mmd): preview and confirmation flow.
 
 Render locally with `mmdc -i <file>.mmd -o <file>.png` or any Mermaid viewer.
-
-## Historical alternative
-
-[archive/sql-demographic-validator-v1.md](archive/sql-demographic-validator-v1.md)
-preserves an earlier validator for reference; the current contract is QUERY_SAFETY.md.

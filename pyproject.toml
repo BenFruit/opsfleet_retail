@@ -13,6 +13,9 @@ dependencies = [
     "psycopg[binary]>=3.2,<4",
     "sqlglot>=30.25.0",
     "pydantic-settings>=2.16.2",
+    "langsmith>=0.14.16",
+    "httpx>=0.28.1",
+    "google-api-core>=2.43.0",
 ]
 [build-system]
 requires = ["hatchling"]

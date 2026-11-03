@@ -4,7 +4,7 @@
     "expected": "monthly-revenue-trend"
   },
   {
-    "question": "Покажи выручку по месяцам",
+    "question": "Show me revenue broken down by month",
     "expected": "monthly-revenue-trend"
   },
   {
@@ -12,7 +12,7 @@
     "expected": "last-month-vs-previous"
   },
   {
-    "question": "Как изменились продажи в октябре по сравнению с сентябрём?",
+    "question": "How did October sales change compared with September?",
     "expected": "last-month-vs-previous"
   },
   {
@@ -20,7 +20,7 @@
     "expected": "top-customers-by-spend"
   },
   {
-    "question": "Топ-10 покупателей по сумме покупок",
+    "question": "Top 10 buyers by total purchase amount",
     "expected": "top-customers-by-spend"
   },
   {
@@ -36,7 +36,7 @@
     "expected": "brand-gross-profit"
   },
   {
-    "question": "Прибыльность брендов за прошлый месяц",
+    "question": "Brand profitability for last month",
     "expected": "brand-gross-profit"
   },
   {
@@ -44,7 +44,7 @@
     "expected": "state-spend-comparison"
   },
   {
-    "question": "Почему в Техасе средний чек ниже, чем в Калифорнии?",
+    "question": "Why is the average order in Texas lower than in California?",
     "expected": "state-spend-comparison"
   },
   {
@@ -52,7 +52,7 @@
     "expected": "age-band-spend"
   },
   {
-    "question": "Сколько тратят покупатели 20-30 лет по сравнению с 40-50?",
+    "question": "How much do buyers aged 20-30 spend compared with 40-50?",
     "expected": "age-band-spend"
   },
   {
@@ -68,7 +68,7 @@
     "expected": "quarterly-business-review"
   },
   {
-    "question": "Подготовь квартальный отчёт с выводами и планом действий",
+    "question": "Put together a quarterly report with conclusions and an action plan",
     "expected": "quarterly-business-review"
   },
   {
@@ -76,7 +76,7 @@
     "expected": "return-rate-by-category"
   },
   {
-    "question": "Где больше всего возвратов?",
+    "question": "Where do we get the most returns?",
     "expected": "return-rate-by-category"
   },
   {
@@ -84,7 +84,7 @@
     "expected": "traffic-source-performance"
   },
   {
-    "question": "Эффективность источников трафика",
+    "question": "Effectiveness of our traffic sources",
     "expected": "traffic-source-performance"
   },
   {
@@ -92,7 +92,7 @@
     "expected": "dataset-overview"
   },
   {
-    "question": "Какие таблицы есть в базе?",
+    "question": "Which tables are in the database?",
     "expected": "dataset-overview"
   },
   {
@@ -116,7 +116,7 @@
     "expected": null
   },
   {
-    "question": "Покажи мои сохранённые отчёты",
+    "question": "Show my saved reports",
     "expected": null
   }
 ]

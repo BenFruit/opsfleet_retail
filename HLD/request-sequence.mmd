@@ -28,7 +28,8 @@ sequenceDiagram
             Q->>Q: rewrite every table to authorized brands, add cohort guard
             Q->>BQ: dry run, then capped execution (job id, timeout)
             BQ-->>Q: rows
-            Q->>A: result guard: shape, scalars, size, cohort check
+            Q-->>A: bounded rows
+            A->>A: result guard: shape, scalars, size, cohort check
             A->>A: observation, or safe error and repair (initial + 2)
         else answer
             A->>A: numeric grounding of prose figures
@@ -38,7 +39,7 @@ sequenceDiagram
         end
     end
     A->>A: append authoritative checked tables, scope line
-    A-->>API: answer (+ "Method: trio vN" when a precedent was used)
+    A-->>API: answer (the model cites "Method: trio vN" when it used a precedent)
     A--)PG: nothing is written unless the user asked to save or remember
     API-->>U: answer
     Note over A: every step logs turn_id/query_id events, optional trace spans

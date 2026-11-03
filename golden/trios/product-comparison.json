@@ -5,8 +5,7 @@
   "question": "Compare the performance of product category X and Y and explain why they differ.",
   "paraphrases": [
     "Why does Jeans perform better than Sweaters?",
-    "Compare two products",
-    "Сравни категории товаров и объясни разницу"
+    "Compare two products"
   ],
   "interpretation": "Compare like-for-like over the same complete period. Explain differences through decomposition: units sold, average selling price, discount versus retail price, return rate and estimated margin. Correlations are hypotheses, not proven causes. Use the user's actual product or category names; discover exact values first if unsure.",
   "metric_definitions": [

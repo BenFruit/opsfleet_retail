@@ -9,7 +9,7 @@ evaluated. This document separates what runs today from the production plan.
 | Layer | What it proves | Implemented as | Cost |
 | --- | --- | --- | --- |
 | Unit and regression tests | Policies, budgets, deletion flow, failure paths behave as designed | `tests/` (287 tests with pytest; PostgreSQL cases opt-in) | Free, every change |
-| Retrieval evaluation | The right Golden precedent is found; nothing for chit-chat | `python -m retail_agent.golden.evaluate`, 30 EN/RU cases | ~30 embedding calls |
+| Retrieval evaluation | The right Golden precedent is found; nothing for chit-chat | `python -m retail_agent.golden.evaluate`, 30 cases | ~30 embedding calls |
 | Answer evaluation | End-to-end answers are correct, safe and on intent | `python -m retail_agent.evaluation.answers`, 15 cases | ~30 model calls + small BigQuery scans |
 | UX evaluation | Executives can get value without coaching | Proxies in the answer run; study is a production plan | People's time |
 
@@ -48,29 +48,32 @@ off-topic request).
 
 ### Results (3 November 2026, `gemini-3.5-flash-lite`, manager_a, 3 brands)
 
-Run on the final code (after the refactoring), same 15 cases, Golden Knowledge on
-vs off. The earlier run on the pre-refactoring code is shown for comparison.
+Final run on the submitted code, same 15 cases, Golden Knowledge on vs off. Full
+per-case output (answers, checks, SQL, judge rationale) is in
+[evals/results/](../evals/results/).
 
-| | Golden on | Golden off (baseline) | Earlier run: on / off |
-| --- | --- | --- | --- |
-| Deterministic pass | 15/15 | 14/15 (dataset overview missed the tables) | 15/15 / 14/15 |
-| Judge pass rate | 1.00 | 0.70 | 1.00 / 0.60 |
-| Judge mean: intent / faithfulness / caveats / actionability | 5.0 / 5.0 / 4.7 / 5.0 | 4.1 / 4.7 / 4.2 / 4.4 | 5.0 / 5.0 / 4.8 / 5.0 and 4.1 / 4.8 / 4.1 / 4.1 |
-| Model calls / SQL attempts (15 cases) | 27 / 11 | 29 / 13 | 27 / 11 and 30 / 13 |
-| Latency p50 / max | 42 s / 142 s | 46 s / 84 s | 5.2 s / 17.7 s and 5.4 s / 10.5 s |
+| | Golden on | Golden off (baseline) |
+| --- | --- | --- |
+| Deterministic pass | 15/15 | 15/15 |
+| Judge pass rate | 1.00 | 0.70 |
+| Judge mean: intent / faithfulness / caveats / actionability | 5.0 / 5.0 / 4.8 / 5.0 | 4.0 / 4.7 / 4.2 / 4.2 |
+| Model calls / SQL attempts (15 cases) | 26 / 11 | 33 / 17 |
+| Latency p50 / max | 12.8 s / 27.5 s | 22.1 s / 112 s |
 
-Latency in the final run is a Gemini incident, not a code change: the median
-model call took 21 s (about 2.5 s in the earlier run), the API returned 503
-`model_unavailable` repeatedly, and the client retried 9 times and answered twice
-with the fallback model. BigQuery queries took about 2 s. The run therefore also
-exercised the retry and fallback path under real provider degradation, without a
-failed or partial answer.
+Earlier runs of the same cases on earlier code versions: 15/15 vs 14/15
+deterministic and 1.00 vs 0.60 judge pass, then 15/15 vs 14/15 and 1.00 vs 0.70.
+In both, the baseline's dataset overview did not name the tables. The second of
+those runs coincided with a Gemini incident (median model call 21 s, repeated 503
+errors): the client retried 9 times and answered twice with the fallback model,
+without a failed or partial answer, so the retry and fallback path has also been
+exercised under real provider degradation.
 
-The baseline's misses are the kind Golden Knowledge targets, in both runs: a
+The baseline's misses are the kind Golden Knowledge targets, in every run: a
 state comparison without the frequency/basket decomposition, a quarterly report
 without the previous-quarter comparison, a product comparison without the
-units/price/returns/margin breakdown and hypotheses, generic actions, and a
-dataset overview that never names the tables. Safety cases passed in both modes:
+units/price/returns/margin breakdown and hypotheses, and generic actions (in the
+earlier runs also a dataset overview that never named the tables). Safety cases
+passed in both modes:
 those boundaries are enforced in code, not by precedents.
 
 ### Findings that changed the product
@@ -98,8 +101,8 @@ Fifteen cases, one run per mode and one model: LLM outputs vary between runs, so
 treat the numbers as a demonstration of the method, not a benchmark. The judge
 is the same model family as the agent and was not calibrated against human
 graders. Reference numbers cover the cases where a single correct value exists;
-report quality still needs analyst review. Two runs on two code versions gave
-the same pass rates with Golden and a similar baseline (0.60 and 0.70 judge pass),
+report quality still needs analyst review. Three runs on three code versions gave
+the same pass rates with Golden and a similar baseline (0.60-0.70 judge pass),
 which is consistent but still not a statistical result.
 
 ## Release gates (production proposal)
