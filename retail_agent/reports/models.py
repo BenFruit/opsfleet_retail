@@ -38,7 +38,8 @@ _REQUEST_SHAPES = {
     (ReportOperation.PREPARE_DELETE, DeleteScope.ID): ("report_id", "ID deletion requires report_id only"),
     **dict.fromkeys(
         ((ReportOperation.PREPARE_DELETE, DeleteScope.ALL), (ReportOperation.PREPARE_DELETE, DeleteScope.CONVERSATION)),
-        (None, "all/conversation deletion accepts no other filters")),
+        (None, "all/conversation deletion accepts no other filters"),
+    ),
 }
 _FILTER_FIELDS = ("query", "report_id")
 
@@ -52,7 +53,10 @@ class ReportRequest(BaseModel):
 
     operation: Literal["save", "search", "open", "list", "prepare_delete"]
     title: str = Field(default="", max_length=255)
-    query: str = Field(max_length=1000, description="Nonempty search text for search or matching deletion. Empty string for all other operations.")
+    query: str = Field(
+        max_length=1000,
+        description="Nonempty search text for search or matching deletion. Empty string for all other operations.",
+    )
     report_id: str = Field(default="", max_length=32)
     scope: Literal["matching", "conversation", "all", "id"] = "matching"
 

@@ -24,7 +24,8 @@ class MemoryRepository:
         with self.connection() as conn:
             return conn.execute(
                 "SELECT memory_id, content, normalized_key FROM user_memories "
-                "WHERE owner_id=%s ORDER BY created_at, memory_id LIMIT %s", (owner, limit),
+                "WHERE owner_id=%s ORDER BY created_at, memory_id LIMIT %s",
+                (owner, limit),
             ).fetchall()
 
     def add(self, owner, entries, *, max_entries, model, turn_id) -> int:
@@ -43,7 +44,15 @@ class MemoryRepository:
                 inserted += conn.execute(
                     "INSERT INTO user_memories (memory_id, owner_id, content, normalized_key, embedding, embedding_model, source_turn_id) "
                     "VALUES (%s,%s,%s,%s,%s::vector,%s,%s) ON CONFLICT (owner_id, normalized_key) DO NOTHING",
-                    (uuid4().hex, owner, item["text"], item["key"], json.dumps(item["vector"], allow_nan=False), model, turn_id),
+                    (
+                        uuid4().hex,
+                        owner,
+                        item["text"],
+                        item["key"],
+                        json.dumps(item["vector"], allow_nan=False),
+                        model,
+                        turn_id,
+                    ),
                 ).rowcount
             total = conn.execute("SELECT count(*) AS n FROM user_memories WHERE owner_id=%s", (owner,)).fetchone()["n"]
             if total > max_entries:
@@ -58,5 +67,7 @@ class MemoryRepository:
             if memory_id is None:
                 cursor = conn.execute("DELETE FROM user_memories WHERE owner_id=%s", (owner,))
             else:
-                cursor = conn.execute("DELETE FROM user_memories WHERE owner_id=%s AND memory_id=%s", (owner, memory_id))
+                cursor = conn.execute(
+                    "DELETE FROM user_memories WHERE owner_id=%s AND memory_id=%s", (owner, memory_id)
+                )
             return cursor.rowcount

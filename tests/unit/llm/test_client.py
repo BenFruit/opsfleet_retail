@@ -4,6 +4,7 @@ from unittest.mock import Mock, patch
 
 import httpx
 from google.genai import errors as genai_errors
+from pydantic import ValidationError
 
 from retail_agent.agent.models import AgentAction
 from retail_agent.llm.client import GeminiClient
@@ -40,12 +41,17 @@ class GeminiClientTests(unittest.TestCase):
 
     def test_missing_model_is_not_replaced_by_unverified_default(self):
         for key, model in (("fake", ""), ("", "model")):
-            with self.subTest(key=bool(key)), patch("retail_agent.llm.client.genai.Client"), self.assertRaises(ValueError):
+            with (
+                self.subTest(key=bool(key)),
+                patch("retail_agent.llm.client.genai.Client"),
+                self.assertRaises(ValueError),
+            ):
                 GeminiClient(key, model)
 
     def test_from_settings_passes_key_models_and_judge_override(self):
-        settings = Settings(_env_file=None, gemini_api_key="fake", gemini_model="primary",
-                            gemini_fallback_model="backup")
+        settings = Settings(
+            _env_file=None, gemini_api_key="fake", gemini_model="primary", gemini_fallback_model="backup"
+        )
         with patch("retail_agent.llm.client.genai.Client") as sdk:
             client = GeminiClient.from_settings(settings)
             judge = GeminiClient.from_settings(settings, model="judge")
@@ -102,7 +108,11 @@ class GeminiRetryTests(unittest.TestCase):
         self.assertEqual(self.generate.call_count, client.max_attempts)
 
     def test_daily_quota_timeout_and_long_retry_after_skip_to_fallback_without_waiting(self):
-        for error in (api_error(429, "Quota perDay exceeded"), httpx.ReadTimeout("SECRET"), api_error(429, retry_after="60")):
+        for error in (
+            api_error(429, "Quota perDay exceeded"),
+            httpx.ReadTimeout("SECRET"),
+            api_error(429, retry_after="60"),
+        ):
             with self.subTest(error=type(error).__name__):
                 client = self.make_client([error, OK_RESPONSE], fallback="backup")
                 client.generate_structured("p", AgentAction)
@@ -119,14 +129,14 @@ class GeminiRetryTests(unittest.TestCase):
         for outcome in (invalid, api_error(400), api_error(401)):
             with self.subTest(outcome=outcome):
                 client = self.make_client([outcome, OK_RESPONSE], fallback="backup")
-                with self.assertRaises(Exception):
+                with self.assertRaises((ValidationError, genai_errors.APIError)):
                     client.generate_structured("p", AgentAction)
                 self.assertEqual(self.generate.call_count, 1)
 
     def test_retry_log_is_metadata_only(self):
         client = self.make_client([api_error(503, "SECRET body"), OK_RESPONSE])
         client.generate_structured("SECRET prompt", AgentAction)
-        name, = (call.args[0] for call in self.logger.warning.call_args_list)
+        (name,) = (call.args[0] for call in self.logger.warning.call_args_list)
         extra = self.logger.warning.call_args.kwargs["extra"]
         self.assertEqual(name, "model_retry")
         self.assertEqual((extra["error_code"], extra["attempt"], extra["http_status"]), ("model_unavailable", 1, 503))

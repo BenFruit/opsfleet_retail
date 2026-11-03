@@ -5,9 +5,9 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from retail_agent.cli import run_chat
 from retail_agent.agent.models import AgentAction
 from retail_agent.agent.orchestrator import AnalyticalAgent
+from retail_agent.cli import run_chat
 from retail_agent.data.bigquery_runner import BigQueryRunner, QueryExecution
 from retail_agent.data.query_service import QueryService
 from retail_agent.llm.analyst import Analyst
@@ -23,8 +23,14 @@ class ChatIntegrationTests(unittest.TestCase):
         llm = Mock(spec=GeminiClient)
         llm.last_usage = {}
         llm.generate_structured.side_effect = [
-            AgentAction(action="query", sql="SELECT DISTINCT oi.status FROM `bigquery-public-data.thelook_ecommerce.order_items` AS oi"),
-            AgentAction(action="query", sql="SELECT SUM(oi.sale_price) AS revenue FROM `bigquery-public-data.thelook_ecommerce.order_items` AS oi WHERE oi.status = 'Complete'"),
+            AgentAction(
+                action="query",
+                sql="SELECT DISTINCT oi.status FROM `bigquery-public-data.thelook_ecommerce.order_items` AS oi",
+            ),
+            AgentAction(
+                action="query",
+                sql="SELECT SUM(oi.sale_price) AS revenue FROM `bigquery-public-data.thelook_ecommerce.order_items` AS oi WHERE oi.status = 'Complete'",
+            ),
             AgentAction(action="answer", answer="Completed-item revenue is 30."),
         ]
         schema = {
@@ -37,7 +43,9 @@ class ChatIntegrationTests(unittest.TestCase):
             QueryExecution(({"status": "Complete"},), False, 50, 50),
             QueryExecution(({"revenue": 30},), False, 50, 50),
         ]
-        agent = AnalyticalAgent(Analyst(llm, schema), QueryService(runner), manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS)
+        agent = AnalyticalAgent(
+            Analyst(llm, schema), QueryService(runner), manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS
+        )
         turn = agent.ask("What is completed revenue?")
         self.assertTrue(turn.answer.startswith("Completed-item revenue is 30."))
         self.assertIn("| revenue |", turn.answer)
@@ -77,8 +85,12 @@ class ChatIntegrationTests(unittest.TestCase):
         with patch("pathlib.Path.read_text", return_value='{"demo": ["A"], "empty": []}'):
             entitlements = Entitlements.from_file("unused.json")
         self.assertEqual(entitlements.brands_for("demo"), frozenset({"A"}))
-        for data in ('[]', '{}', '{"demo": "A"}', '{"demo": [null]}', '{"demo": [" "]}'):
-            with self.subTest(data=data), patch("pathlib.Path.read_text", return_value=data), self.assertRaises(ValueError):
+        for data in ("[]", "{}", '{"demo": "A"}', '{"demo": [null]}', '{"demo": [" "]}'):
+            with (
+                self.subTest(data=data),
+                patch("pathlib.Path.read_text", return_value=data),
+                self.assertRaises(ValueError),
+            ):
                 Entitlements.from_file("unused.json")
 
     def test_unknown_or_empty_identity_is_denied(self):

@@ -11,7 +11,6 @@ from retail_agent.golden.service import GoldenKnowledge, query_text
 from retail_agent.sql.validator import validate_query
 from support.paths import REPO_ROOT
 
-
 BUCKET = REPO_ROOT / DEFAULT_BUCKET
 VECTOR = [0.0] * 767 + [1.0]
 
@@ -35,21 +34,29 @@ class GoldenBucketTests(unittest.TestCase):
         self.assertEqual(demographic, {"age-band-spend", "state-spend-comparison", "traffic-source-performance"})
 
     def test_reports_must_use_placeholders_not_numbers(self):
-        for report in ("Revenue was $1,200 this month and more text to pass length.",
-                       "Revenue grew 12% versus last month, with more words for length."):
+        for report in (
+            "Revenue was $1,200 this month and more text to pass length.",
+            "Revenue grew 12% versus last month, with more words for length.",
+        ):
             with self.subTest(report=report), self.assertRaises(ValidationError):
                 trio(analyst_report=report)
         self.assertIn("<", trio().analyst_report)
 
     def test_policy_violations_and_name_mismatch_fail_the_whole_bucket(self):
         bad_sql = "SELECT u.email AS email FROM `bigquery-public-data.thelook_ecommerce.users` AS u"
-        with self.subTest("pii"), patch("pathlib.Path.read_text", return_value=trio(sql=bad_sql).model_dump_json()), \
-                patch("pathlib.Path.glob", return_value=[BUCKET / "monthly-revenue-trend.json"]):
+        with (
+            self.subTest("pii"),
+            patch("pathlib.Path.read_text", return_value=trio(sql=bad_sql).model_dump_json()),
+            patch("pathlib.Path.glob", return_value=[BUCKET / "monthly-revenue-trend.json"]),
+        ):
             with self.assertRaises(GoldenError) as caught:
                 load_bucket(BUCKET)
             self.assertIn("SQL rejected by policy", str(caught.exception))
-        with self.subTest("name"), patch("pathlib.Path.glob", return_value=[BUCKET / "other-name.json"]), \
-                patch("pathlib.Path.read_text", return_value=trio().model_dump_json()):
+        with (
+            self.subTest("name"),
+            patch("pathlib.Path.glob", return_value=[BUCKET / "other-name.json"]),
+            patch("pathlib.Path.read_text", return_value=trio().model_dump_json()),
+        ):
             with self.assertRaises(GoldenError) as caught:
                 load_bucket(BUCKET)
             self.assertIn("file name must equal id", str(caught.exception))
@@ -96,8 +103,13 @@ class GoldenIngestTests(unittest.TestCase):
 
 
 def row(t, similarity, lexical=0.0):
-    return {"trio_id": t.id, "version": t.version, "document": t.model_dump(mode="json"),
-            "similarity": similarity, "lexical": lexical}
+    return {
+        "trio_id": t.id,
+        "version": t.version,
+        "document": t.model_dump(mode="json"),
+        "similarity": similarity,
+        "lexical": lexical,
+    }
 
 
 class GoldenRetrievalTests(unittest.TestCase):
@@ -111,16 +123,20 @@ class GoldenRetrievalTests(unittest.TestCase):
     def test_threshold_top_k_and_lexical_tie_break(self):
         t = self.trios
         self.repository.search.return_value = [
-            row(t["brand-gross-profit"], 0.70), row(t["monthly-revenue-trend"], 0.69, lexical=0.5),
-            row(t["last-month-vs-previous"], 0.65), row(t["dataset-overview"], 0.40),
+            row(t["brand-gross-profit"], 0.70),
+            row(t["monthly-revenue-trend"], 0.69, lexical=0.5),
+            row(t["last-month-vs-previous"], 0.65),
+            row(t["dataset-overview"], 0.40),
         ]
         result = self.golden.retrieve("revenue by month", turn_id="t1")
         self.assertEqual(result["status"], "ready")
         self.assertEqual([i["trio_id"] for i in result["items"]], ["monthly-revenue-trend", "brand-gross-profit"])
         self.assertNotIn("reviewer", result["items"][0])
         extra = self.logger.info.call_args.kwargs["extra"]
-        self.assertEqual((extra["turn_id"], extra["golden_ids"], extra["candidate_count"]),
-                         ("t1", ["monthly-revenue-trend", "brand-gross-profit"], 4))
+        self.assertEqual(
+            (extra["turn_id"], extra["golden_ids"], extra["candidate_count"]),
+            ("t1", ["monthly-revenue-trend", "brand-gross-profit"], 4),
+        )
 
     def test_nothing_relevant_returns_no_examples(self):
         self.repository.search.return_value = [row(self.trios["dataset-overview"], 0.31)]
@@ -150,7 +166,9 @@ class GoldenEvaluationMetricTests(unittest.TestCase):
             {"expected": None, "ranked": [("a", 0.55)]},
         ]
         metrics = score(results, 0.50)
-        self.assertEqual((metrics["hit_at_1"], metrics["recall_at_3"], metrics["negative_false_positive_rate"]), (0.5, 1.0, 1.0))
+        self.assertEqual(
+            (metrics["hit_at_1"], metrics["recall_at_3"], metrics["negative_false_positive_rate"]), (0.5, 1.0, 1.0)
+        )
         best = best_threshold(results)
         self.assertEqual((best["recall_at_3"], best["negative_false_positive_rate"]), (1.0, 0.0))
         self.assertGreater(best["threshold"], 0.55)

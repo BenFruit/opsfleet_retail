@@ -6,7 +6,6 @@ from retail_agent.llm.embeddings import vector_literal
 from retail_agent.reports.models import MAX_DELETE_IDS, DeleteScope, ReportError, ReportRequest
 from retail_agent.storage.postgres import StorageError
 
-
 _ACCESS = "owner_id = %s AND brand_scope <@ %s::text[] AND cardinality(brand_scope) > 0"
 _SUMMARY = "report_id, title, conversation_id, created_at"
 _CONTAINS_QUERY = "strpos(lower(title || ' ' || content), lower(%s)) > 0"
@@ -34,7 +33,9 @@ class ReportRepository:
             with self._connect() as conn:
                 yield conn
         except StorageError:
-            raise ReportError("Report storage is unavailable or an operation failed. No success is confirmed; check the library before retrying a write.") from None
+            raise ReportError(
+                "Report storage is unavailable or an operation failed. No success is confirmed; check the library before retrying a write."
+            ) from None
 
     def save(self, *, report_id, owner, brands, conversation_id, title, content, vector, model):
         with self.connection() as conn:

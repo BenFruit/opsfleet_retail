@@ -19,8 +19,13 @@ def parse_options(settings: Settings, argv=None) -> ChatOptions:
     args = parser.parse_args(argv)
     if args.min_cohort_size < 2:
         parser.error("--min-cohort-size must be at least 2")
-    return ChatOptions(project=args.project, manager=args.manager, access_config=args.access_config,
-                       log_file=args.log_file, min_cohort_size=args.min_cohort_size)
+    return ChatOptions(
+        project=args.project,
+        manager=args.manager,
+        access_config=args.access_config,
+        log_file=args.log_file,
+        min_cohort_size=args.min_cohort_size,
+    )
 
 
 def run_chat(agent: AnalyticalAgent) -> None:
@@ -40,7 +45,9 @@ def run_chat(agent: AnalyticalAgent) -> None:
                 print("Demographics use aggregate SQL with computed groups; small cohorts are suppressed.")
                 print("Ask to save the last answer, find/list/open your reports, or preview deletion.")
                 print("Deletion requires a separate /confirm; /cancel or any new question cancels it.")
-                print("Explicitly ask to remember preferences; /memories lists them, /forget ID or /forget-all removes them.")
+                print(
+                    "Explicitly ask to remember preferences; /memories lists them, /forget ID or /forget-all removes them."
+                )
                 continue
             if not question:
                 continue

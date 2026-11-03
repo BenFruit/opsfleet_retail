@@ -2,11 +2,12 @@
 
 from retail_agent.security.access import Entitlements
 
-
-DEMO_ENTITLEMENTS = Entitlements({
-    "manager_a": ["Brand A", "Brand B"],
-    "manager_b": ["Brand C"],
-})
+DEMO_ENTITLEMENTS = Entitlements(
+    {
+        "manager_a": ["Brand A", "Brand B"],
+        "manager_b": ["Brand C"],
+    }
+)
 
 
 def patch_agent_loggers(test_case):

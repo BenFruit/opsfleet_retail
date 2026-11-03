@@ -10,7 +10,6 @@ import logging
 from retail_agent.presentation import remove_markdown_tables, render_observation, render_reports
 from retail_agent.safety.grounding import ungrounded_figures
 
-
 logger = logging.getLogger(__name__)
 
 PARTIAL_PREFIX = "I could not fully complete the analysis."
@@ -37,8 +36,12 @@ def partial_answer(state, reason: str) -> str:
 
 def _feedback(state, update: dict, code: str, message: str) -> dict:
     """Send the answer back to the model once instead of showing it."""
-    return {**update, "action": None, "action_retries": state["action_retries"] + 1,
-            "observations": [*state["observations"], {"status": "error", "code": code, "message": message}]}
+    return {
+        **update,
+        "action": None,
+        "action_retries": state["action_retries"] + 1,
+        "observations": [*state["observations"], {"status": "error", "code": code, "message": message}],
+    }
 
 
 def finalize_answer(state, answer: str, update: dict, *, limits, authorized_brand_count: int) -> dict:
@@ -49,11 +52,17 @@ def finalize_answer(state, answer: str, update: dict, *, limits, authorized_bran
 
     if query_failures(observations) and not checked and not report_results:
         # A premature final answer is not a replacement for repairing the failed SQL.
-        if (state["consecutive_errors"] < limits.max_consecutive_errors
-                and state["action_retries"] < limits.max_action_retries
-                and state["queries"] < limits.max_queries):
-            return _feedback(state, update, "repair_required",
-                             "No SQL completed successfully. Repair the previous attempted SQL now using query, unless the request is prohibited; in that case explain the safety restriction. Never substitute a different grouping or invent totals.")
+        if (
+            state["consecutive_errors"] < limits.max_consecutive_errors
+            and state["action_retries"] < limits.max_action_retries
+            and state["queries"] < limits.max_queries
+        ):
+            return _feedback(
+                state,
+                update,
+                "repair_required",
+                "No SQL completed successfully. Repair the previous attempted SQL now using query, unless the request is prohibited; in that case explain the safety restriction. Never substitute a different grouping or invent totals.",
+            )
         # An answer following only failures cannot pretend to deliver fresh
         # results (including "I will fetch it" placeholder answers).
         return {**update, "answer": partial_answer(state, "No new query completed successfully.")}
@@ -65,29 +74,39 @@ def finalize_answer(state, answer: str, update: dict, *, limits, authorized_bran
         evidence = checked + [item for turn in state["history"] for item in turn.get("observations", [])]
         ungrounded = ungrounded_figures(prose, evidence, context=state["question"])
     if ungrounded:
-        can_repair = (state["action_retries"] < limits.max_action_retries
-                      and state["model_calls"] + 1 < limits.max_model_calls)
-        logger.warning("answer_ungrounded_figures", extra={
-            "turn_id": state["turn_id"], "row_count": len(ungrounded),
-            "status": "repair" if can_repair else "noted",
-        })
+        can_repair = (
+            state["action_retries"] < limits.max_action_retries and state["model_calls"] + 1 < limits.max_model_calls
+        )
+        logger.warning(
+            "answer_ungrounded_figures",
+            extra={
+                "turn_id": state["turn_id"],
+                "row_count": len(ungrounded),
+                "status": "repair" if can_repair else "noted",
+            },
+        )
         # One bounded self-correction: compute totals in SQL instead of in prose.
         if can_repair:
-            return _feedback(state, update, "ungrounded_numbers",
-                             f"These figures in your prose do not match any checked value or the sum/difference of two: {', '.join(ungrounded[:10])}. "
-                             "Do not add up or average many rows in prose. Run a query that computes the total/average, "
-                             "or quote only checked values, then answer again.")
+            return _feedback(
+                state,
+                update,
+                "ungrounded_numbers",
+                f"These figures in your prose do not match any checked value or the sum/difference of two: {', '.join(ungrounded[:10])}. "
+                "Do not add up or average many rows in prose. Run a query that computes the total/average, "
+                "or quote only checked values, then answer again.",
+            )
 
     text = (prose or "Here are the checked results.") if checked else answer
     if ungrounded:
-        text += ("\n\nNote: these figures in the summary could not be matched to the checked "
-                 f"results and may be miscalculated: {', '.join(ungrounded[:10])}. Rely on the tables.")
+        text += (
+            "\n\nNote: these figures in the summary could not be matched to the checked "
+            f"results and may be miscalculated: {', '.join(ungrounded[:10])}. Rely on the tables."
+        )
     if checked:
         text += (
             f"\n\nScope: authorized brands only (configured: {authorized_brand_count})."
-            "\n\nChecked query results:\n" + "\n\n".join(
-                f"Result {index}:\n{render_observation(item)}" for index, item in enumerate(checked, start=1)
-            )
+            "\n\nChecked query results:\n"
+            + "\n\n".join(f"Result {index}:\n{render_observation(item)}" for index, item in enumerate(checked, start=1))
         )
     if report_results:
         text += "\n\nReport sources:\n" + "\n".join(

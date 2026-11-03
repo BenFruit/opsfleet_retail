@@ -6,7 +6,6 @@ from time import monotonic
 
 from retail_agent.golden.models import GoldenTrio
 
-
 logger = logging.getLogger(__name__)
 
 # A short follow-up ("and by month?") carries little intent on its own.
@@ -23,8 +22,9 @@ def query_text(question: str, previous_question: str | None = None) -> str:
 
 
 class GoldenKnowledge:
-    def __init__(self, repository, embedder, *, top_k: int = 3, min_similarity: float = 0.65,
-                 max_prompt_chars: int = 9000):
+    def __init__(
+        self, repository, embedder, *, top_k: int = 3, min_similarity: float = 0.65, max_prompt_chars: int = 9000
+    ):
         self.repository = repository
         self.embedder = embedder
         self.top_k = top_k
@@ -54,17 +54,27 @@ class GoldenKnowledge:
                     break
                 items.append(view)
             result = {"status": "ready", "items": items}
-            logger.info("golden_retrieved", extra={
-                "turn_id": turn_id, "status": "ok", "row_count": len(items),
-                "candidate_count": len(candidates),
-                "golden_ids": [item["trio_id"] for item in items],
-                "top_similarity": round(candidates[0][1], 3) if candidates else None,
-                "duration_ms": round((monotonic() - started) * 1000),
-            })
+            logger.info(
+                "golden_retrieved",
+                extra={
+                    "turn_id": turn_id,
+                    "status": "ok",
+                    "row_count": len(items),
+                    "candidate_count": len(candidates),
+                    "golden_ids": [item["trio_id"] for item in items],
+                    "top_similarity": round(candidates[0][1], 3) if candidates else None,
+                    "duration_ms": round((monotonic() - started) * 1000),
+                },
+            )
             return result
         except Exception as error:
-            logger.warning("golden_retrieval_failed", extra={
-                "turn_id": turn_id, "error_code": "golden_unavailable", "error_type": type(error).__name__,
-                "duration_ms": round((monotonic() - started) * 1000),
-            })
+            logger.warning(
+                "golden_retrieval_failed",
+                extra={
+                    "turn_id": turn_id,
+                    "error_code": "golden_unavailable",
+                    "error_type": type(error).__name__,
+                    "duration_ms": round((monotonic() - started) * 1000),
+                },
+            )
             return {"status": "unavailable", "items": []}

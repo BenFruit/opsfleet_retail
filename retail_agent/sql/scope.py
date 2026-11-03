@@ -22,8 +22,8 @@ def _table_path(name: str) -> str:
 def _sold_with_allowed_brand(relation: str) -> str:
     """Rows linked (by `relation`) to at least one order item of an allowed brand."""
     return f"""EXISTS (
-            SELECT 1 FROM {_table_path('order_items')} AS oi
-            JOIN {_table_path('products')} AS p ON p.id = oi.product_id
+            SELECT 1 FROM {_table_path("order_items")} AS oi
+            JOIN {_table_path("products")} AS p ON p.id = oi.product_id
             WHERE {relation}
               AND p.brand IN UNNEST(@allowed_brands)
         )"""
@@ -33,7 +33,7 @@ def _sold_with_allowed_brand(relation: str) -> str:
 _BRAND_PREDICATES = {
     "products": "r.brand IN UNNEST(@allowed_brands)",
     "order_items": f"""EXISTS (
-            SELECT 1 FROM {_table_path('products')} AS p
+            SELECT 1 FROM {_table_path("products")} AS p
             WHERE p.id = r.product_id
               AND p.brand IN UNNEST(@allowed_brands)
         )""",
@@ -48,7 +48,8 @@ def _scoped_source(table_name: str, *, demographics: bool = False) -> exp.Select
         f"r.`{name}`"
         for name, policy in TABLE_POLICIES[table_name].items()
         if policy.access_level == DataAccessLevel.ALLOWED
-        or demographics and policy.access_level == DataAccessLevel.AGGREGATE_ONLY
+        or demographics
+        and policy.access_level == DataAccessLevel.AGGREGATE_ONLY
     )
     return parse_one(
         f"SELECT {columns} FROM {_table_path(table_name)} AS r WHERE {_BRAND_PREDICATES[table_name]}",
@@ -93,10 +94,14 @@ def scope_query(tree, *, minimum_cohort_size: int = 5) -> str:
     # Snapshot BEFORE replacement: never recursively rewrite our own guards.
     for table in list(physical_tables(tree)):
         alias = table.args.get("alias")
-        table.replace(exp.Subquery(
-            this=_scoped_source(table.name, demographics=demographics),
-            alias=alias.copy() if alias is not None else exp.TableAlias(this=exp.to_identifier(table.name, quoted=True)),
-        ))
+        table.replace(
+            exp.Subquery(
+                this=_scoped_source(table.name, demographics=demographics),
+                alias=alias.copy()
+                if alias is not None
+                else exp.TableAlias(this=exp.to_identifier(table.name, quoted=True)),
+            )
+        )
     return tree.sql(dialect="bigquery", pretty=True)
 
 

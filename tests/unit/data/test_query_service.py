@@ -6,7 +6,6 @@ from google.api_core import exceptions as google_errors
 from retail_agent.data.bigquery_runner import BigQueryRunner, QueryExecution
 from retail_agent.data.query_service import QueryLimits, QueryService, QueryServiceError
 
-
 BRANDS_A = frozenset({"Brand A", "Brand B"})
 
 
@@ -18,7 +17,10 @@ class QueryServiceTests(unittest.TestCase):
         self.runner = Mock(spec=BigQueryRunner)
         self.runner.dry_run.return_value = 50
         self.runner.execute_scoped_query.return_value = QueryExecution(
-            rows=({"revenue": 30},), truncated=False, bytes_processed=50, bytes_billed=100,
+            rows=({"revenue": 30},),
+            truncated=False,
+            bytes_processed=50,
+            bytes_billed=100,
         )
         self.limits = QueryLimits(maximum_bytes_billed=1000, max_rows=2, max_result_bytes=1000)
         self.service = QueryService(self.runner, self.limits)
@@ -60,7 +62,11 @@ class QueryServiceTests(unittest.TestCase):
         for sql in (
             "SELECT u.email FROM `bigquery-public-data.thelook_ecommerce.users` AS u",
             "SELECT u.age FROM `bigquery-public-data.thelook_ecommerce.users` AS u",
-            "DELETE FROM x", "SELECT 1; SELECT 2", "SELECT (", "", None,
+            "DELETE FROM x",
+            "SELECT 1; SELECT 2",
+            "SELECT (",
+            "",
+            None,
         ):
             with self.subTest(sql=sql):
                 self.assert_error("invalid_sql", sql=sql)
@@ -173,25 +179,29 @@ class QueryServiceTests(unittest.TestCase):
 
     def test_runner_row_overflow_fails_closed(self):
         self.runner.execute_scoped_query.return_value = QueryExecution(
-            rows=({"id": 1}, {"id": 2}, {"id": 3}), truncated=False,
+            rows=({"id": 1}, {"id": 2}, {"id": 3}),
+            truncated=False,
         )
         self.assert_error("result_limit")
 
     def test_result_size_limit(self):
         self.runner.execute_scoped_query.return_value = QueryExecution(
-            rows=({"text": "x" * 2000},), truncated=False,
+            rows=({"text": "x" * 2000},),
+            truncated=False,
         )
         self.assert_error("result_limit")
 
     def test_result_size_uses_utf8_bytes(self):
         self.runner.execute_scoped_query.return_value = QueryExecution(
-            rows=({"text": "\u0430" * 600},), truncated=False,
+            rows=({"text": "\u0430" * 600},),
+            truncated=False,
         )
         self.assert_error("result_limit")
 
     def test_result_repr_does_not_include_rows(self):
         self.runner.execute_scoped_query.return_value = QueryExecution(
-            rows=({"secret": "DO_NOT_LOG"},), truncated=False,
+            rows=({"secret": "DO_NOT_LOG"},),
+            truncated=False,
         )
         result = self.service.execute(SQL, allowed_brands=BRANDS_A)
         self.assertNotIn("DO_NOT_LOG", repr(result))
@@ -199,7 +209,8 @@ class QueryServiceTests(unittest.TestCase):
 
     def test_logs_do_not_include_sql_identity_brands_rows_or_backend_text(self):
         self.runner.execute_scoped_query.return_value = QueryExecution(
-            rows=({"text": "SECRET_ROW"},), truncated=False,
+            rows=({"text": "SECRET_ROW"},),
+            truncated=False,
         )
         self.service.execute(SQL, allowed_brands=BRANDS_A)
         self.runner.execute_scoped_query.side_effect = RuntimeError("SECRET_EXCEPTION")
@@ -217,10 +228,28 @@ class QueryServiceTests(unittest.TestCase):
             ("authorization", "cost_limit", {"scan_budget_bytes": 0}, None),
             ("validation", "invalid_sql", {"sql": "DELETE FROM x"}, None),
             ("dry_run", "cost_limit", {}, lambda: setattr(self.runner.dry_run, "return_value", 5000)),
-            ("dry_run", "backend_denied", {}, lambda: setattr(self.runner.dry_run, "side_effect", google_errors.Forbidden("x"))),
-            ("execution", "timeout", {}, lambda: setattr(self.runner.execute_scoped_query, "side_effect", TimeoutError())),
-            ("result_bounds", "result_limit", {}, lambda: setattr(self.runner.execute_scoped_query, "return_value",
-                                                                  QueryExecution(rows=({"a": 1},) * 3, truncated=False))),
+            (
+                "dry_run",
+                "backend_denied",
+                {},
+                lambda: setattr(self.runner.dry_run, "side_effect", google_errors.Forbidden("x")),
+            ),
+            (
+                "execution",
+                "timeout",
+                {},
+                lambda: setattr(self.runner.execute_scoped_query, "side_effect", TimeoutError()),
+            ),
+            (
+                "result_bounds",
+                "result_limit",
+                {},
+                lambda: setattr(
+                    self.runner.execute_scoped_query,
+                    "return_value",
+                    QueryExecution(rows=({"a": 1},) * 3, truncated=False),
+                ),
+            ),
         )
         for stage, code, kwargs, arrange in cases:
             with self.subTest(stage=stage, code=code):
@@ -258,11 +287,17 @@ class QueryServiceTests(unittest.TestCase):
 
     def test_limits_are_validated(self):
         cases = [
-            {"maximum_bytes_billed": 0}, {"max_rows": -1}, {"max_rows": True},
-            {"max_result_bytes": 0}, {"max_sql_chars": 0},
-            {"timeout_seconds": 0}, {"timeout_seconds": float("inf")},
-            {"api_timeout_seconds": float("nan")}, {"api_timeout_seconds": True},
-            {"minimum_cohort_size": 1}, {"minimum_cohort_size": True},
+            {"maximum_bytes_billed": 0},
+            {"max_rows": -1},
+            {"max_rows": True},
+            {"max_result_bytes": 0},
+            {"max_sql_chars": 0},
+            {"timeout_seconds": 0},
+            {"timeout_seconds": float("inf")},
+            {"api_timeout_seconds": float("nan")},
+            {"api_timeout_seconds": True},
+            {"minimum_cohort_size": 1},
+            {"minimum_cohort_size": True},
         ]
         for kwargs in cases:
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):

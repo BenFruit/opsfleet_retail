@@ -18,16 +18,15 @@ from retail_agent.agent.conversation import append_turn, is_snapshot_answer
 from retail_agent.agent.models import AgentLimits, AgentState, TurnResult
 from retail_agent.data.query_service import QueryService, QueryServiceError
 from retail_agent.llm.analyst import Analyst
-from retail_agent.llm.errors import describe_model_error
 from retail_agent.llm.embeddings import EmbeddingError
+from retail_agent.llm.errors import describe_model_error
 from retail_agent.memory.models import UserMemoryError
 from retail_agent.observability.tracing import get_callbacks
-from retail_agent.reports.models import ReportError
 from retail_agent.presentation import render_reports
+from retail_agent.reports.models import ReportError
 from retail_agent.safety.errors import ResultGuardError
 from retail_agent.safety.result_guard import make_observation
 from retail_agent.safety.sensitive_text import check_text
-
 
 logger = logging.getLogger(__name__)
 _STOP_CODES = {"access_denied", "unsafe_result", "timeout", "backend_unavailable", "backend_denied", "rate_limited"}
@@ -48,7 +47,12 @@ class AnalyticalAgent:
     """One trusted manager/session per instance; memory is bounded and in-process."""
 
     def __init__(
-        self, analyst: Analyst, query_service: QueryService, *, manager_id: str, entitlements,
+        self,
+        analyst: Analyst,
+        query_service: QueryService,
+        *,
+        manager_id: str,
+        entitlements,
         limits: AgentLimits | None = None,
         reports=None,
         memory=None,
@@ -76,14 +80,28 @@ class AnalyticalAgent:
         graph.add_node("reports", self._reports)
         graph.add_node("remember", self._remember)
         graph.add_edge(START, "plan")
-        graph.add_conditional_edges("plan", route_after_plan, {"query": "query", "reports": "reports", "remember": "remember", "plan": "plan", "end": END})
+        graph.add_conditional_edges(
+            "plan",
+            route_after_plan,
+            {"query": "query", "reports": "reports", "remember": "remember", "plan": "plan", "end": END},
+        )
         graph.add_edge("remember", "plan")
-        graph.add_conditional_edges("reports", lambda state: "end" if state["answer"] else "plan", {
-            "plan": "plan", "end": END,
-        })
-        graph.add_conditional_edges("query", lambda state: "end" if state["answer"] else "plan", {
-            "plan": "plan", "end": END,
-        })
+        graph.add_conditional_edges(
+            "reports",
+            lambda state: "end" if state["answer"] else "plan",
+            {
+                "plan": "plan",
+                "end": END,
+            },
+        )
+        graph.add_conditional_edges(
+            "query",
+            lambda state: "end" if state["answer"] else "plan",
+            {
+                "plan": "plan",
+                "end": END,
+            },
+        )
         self.graph = graph.compile()  # No persistence/checkpointer.
 
     def reset(self) -> None:
@@ -100,8 +118,14 @@ class AnalyticalAgent:
         if isinstance(question, str):
             command = question.strip().lower()
             if is_command(command):
-                return TurnResult(run_command(command, memory=self.memory, reports=self.reports,
-                                              conversation_id=self.conversation_id), 0, 0, 0)
+                return TurnResult(
+                    run_command(
+                        command, memory=self.memory, reports=self.reports, conversation_id=self.conversation_id
+                    ),
+                    0,
+                    0,
+                    0,
+                )
             if self.reports is not None:
                 self.reports.cancel()  # A new question cancels a pending deletion preview.
         rejection = self._reject_question(question)
@@ -117,12 +141,15 @@ class AnalyticalAgent:
             # Langfuse is opt-in. Keep implicit LangSmith export disabled even
             # when stale LANGSMITH_TRACING variables remain in the environment.
             with tracing_context(enabled=False):
-                result = self.graph.invoke(state, config={
-                    "recursion_limit": 2 * self.limits.max_model_calls + 5,
-                    "run_name": "retail_question",
-                    "metadata": {"turn_id": state["turn_id"]},
-                    "callbacks": get_callbacks(),
-                })
+                result = self.graph.invoke(
+                    state,
+                    config={
+                        "recursion_limit": 2 * self.limits.max_model_calls + 5,
+                        "run_name": "retail_question",
+                        "metadata": {"turn_id": state["turn_id"]},
+                        "callbacks": get_callbacks(),
+                    },
+                )
         except Exception:
             logger.warning("agent_turn_failed", extra={"turn_id": state["turn_id"], "error_code": "graph_failed"})
             return TurnResult("Analysis could not be completed. Please try again.", 0, 0, 0)
@@ -132,15 +159,20 @@ class AnalyticalAgent:
             self.last_answer_brands = list(self.allowed_brands)
         if append_turn(self.history, question, result, self.limits):
             self.history_truncated = True
-        logger.info("agent_turn_completed", extra={
-            "turn_id": state["turn_id"], "query_count": result["queries"],
-            # "partial" = controlled stop (budget, unrecovered failure); a key quality metric.
-            "status": "partial" if result["answer"].startswith(PARTIAL_PREFIX) else "ok",
-            "model_calls": result["model_calls"], "scan_bytes_used": result["scan_bytes_used"],
-            "duration_ms": round((monotonic() - started) * 1000),
-            "report_calls": result["report_calls"],
-            "memory_calls": result["memory_calls"],
-        })
+        logger.info(
+            "agent_turn_completed",
+            extra={
+                "turn_id": state["turn_id"],
+                "query_count": result["queries"],
+                # "partial" = controlled stop (budget, unrecovered failure); a key quality metric.
+                "status": "partial" if result["answer"].startswith(PARTIAL_PREFIX) else "ok",
+                "model_calls": result["model_calls"],
+                "scan_bytes_used": result["scan_bytes_used"],
+                "duration_ms": round((monotonic() - started) * 1000),
+                "report_calls": result["report_calls"],
+                "memory_calls": result["memory_calls"],
+            },
+        )
         return TurnResult(result["answer"], result["queries"], result["model_calls"], result["scan_bytes_used"])
 
     def _reject_question(self, question) -> str | None:
@@ -156,13 +188,22 @@ class AnalyticalAgent:
 
     def _new_state(self, question: str) -> AgentState:
         return {
-            "memory_calls": 0, "user_memory": [], "memory_status": "disabled",
+            "memory_calls": 0,
+            "user_memory": [],
+            "memory_status": "disabled",
             "golden": {"status": "disabled", "items": []},
             "action_retries": 0,
             "report_calls": 0,
-            "question": question, "history": list(self.history), "observations": [],
-            "action": None, "answer": "", "queries": 0, "model_calls": 0,
-            "consecutive_errors": 0, "scan_bytes_used": 0, "turn_id": uuid4().hex,
+            "question": question,
+            "history": list(self.history),
+            "observations": [],
+            "action": None,
+            "answer": "",
+            "queries": 0,
+            "model_calls": 0,
+            "consecutive_errors": 0,
+            "scan_bytes_used": 0,
+            "turn_id": uuid4().hex,
         }
 
     def _prepare_context(self, state: AgentState) -> None:
@@ -178,7 +219,9 @@ class AnalyticalAgent:
         if self.golden is not None:
             # Every model step in this turn sees the same examples.
             previous = self.history[-1]["question"] if self.history else None
-            state["golden"] = self.golden.retrieve(state["question"], previous_question=previous, turn_id=state["turn_id"])
+            state["golden"] = self.golden.retrieve(
+                state["question"], previous_question=previous, turn_id=state["turn_id"]
+            )
 
     def _plan(self, state: AgentState) -> dict:
         if state["model_calls"] >= self.limits.max_model_calls:
@@ -188,23 +231,36 @@ class AnalyticalAgent:
             action = self.analyst.decide(**self._decision_context(state))
             if action.action == "answer":
                 check_text(action.answer)
-            logger.info("agent_model_completed", extra={
-                "turn_id": state["turn_id"], "action": action.action,
-                "duration_ms": round((monotonic() - started) * 1000),
-                **self.analyst.llm.last_usage,
-            })
+            logger.info(
+                "agent_model_completed",
+                extra={
+                    "turn_id": state["turn_id"],
+                    "action": action.action,
+                    "duration_ms": round((monotonic() - started) * 1000),
+                    **self.analyst.llm.last_usage,
+                },
+            )
         except Exception as error:
             return self._model_failure(state, error, started)
         update = {"action": action, "model_calls": state["model_calls"] + 1}
         if action.action == "answer":
-            return finalize_answer(state, action.answer, update, limits=self.limits,
-                                   authorized_brand_count=self.authorized_brand_count)
+            return finalize_answer(
+                state, action.answer, update, limits=self.limits, authorized_brand_count=self.authorized_brand_count
+            )
         if action.action == "remember":
             if state["memory_calls"] >= self.limits.max_memory_calls:
-                return {**update, "action": None, "observations": [*state["observations"], {
-                    "status": "memory", "saved": False,
-                    "message": "Memory was already attempted this turn. Do not retry the write; continue the remaining analysis or answer.",
-                }]}
+                return {
+                    **update,
+                    "action": None,
+                    "observations": [
+                        *state["observations"],
+                        {
+                            "status": "memory",
+                            "saved": False,
+                            "message": "Memory was already attempted this turn. Do not retry the write; continue the remaining analysis or answer.",
+                        },
+                    ],
+                }
         elif action.action == "report":
             if state["report_calls"] >= self.limits.max_report_calls:
                 update["answer"] = "The report-tool budget was exhausted."
@@ -217,7 +273,8 @@ class AnalyticalAgent:
         return {
             "user_memory": {"status": state["memory_status"], "items": state["user_memory"]},
             "golden": state["golden"],
-            "question": state["question"], "history": state["history"],
+            "question": state["question"],
+            "history": state["history"],
             "observations": state["observations"],
             "access_context": {"authorized_brands": self.allowed_brands},
             "session_context": {
@@ -239,23 +296,37 @@ class AnalyticalAgent:
         """Invalid JSON/actions get one bounded retry; other model failures stop the turn."""
         if isinstance(error, ResultGuardError):
             code, message, metadata = (
-                "model_output_withheld", "The model response was withheld by the privacy guard.",
+                "model_output_withheld",
+                "The model response was withheld by the privacy guard.",
                 {"error_type": "ResultGuardError"},
             )
         else:
             code, message, metadata = describe_model_error(error)
-        logger.warning("agent_model_failed", extra={
-            "turn_id": state["turn_id"], "error_code": code,
-            "duration_ms": round((monotonic() - started) * 1000), **metadata,
-        })
-        if code in {"model_invalid_action", "model_invalid_json"} and state["action_retries"] < self.limits.max_action_retries:
+        logger.warning(
+            "agent_model_failed",
+            extra={
+                "turn_id": state["turn_id"],
+                "error_code": code,
+                "duration_ms": round((monotonic() - started) * 1000),
+                **metadata,
+            },
+        )
+        if (
+            code in {"model_invalid_action", "model_invalid_json"}
+            and state["action_retries"] < self.limits.max_action_retries
+        ):
             return {
-                "action": None, "model_calls": state["model_calls"] + 1,
+                "action": None,
+                "model_calls": state["model_calls"] + 1,
                 "action_retries": state["action_retries"] + 1,
-                "observations": [*state["observations"], {
-                    "status": "error", "code": code,
-                    "message": "Your previous response was rejected before its proposed action executed. Earlier successful tool results remain valid; do not repeat successful writes. Return ONE corrected JSON action: query with SQL only, report with a valid request only (query is required, use empty string when not searching), remember with remember.memories strings only, or answer with text only. Never use a demographic action. Do not claim the rejected action succeeded.",
-                }],
+                "observations": [
+                    *state["observations"],
+                    {
+                        "status": "error",
+                        "code": code,
+                        "message": "Your previous response was rejected before its proposed action executed. Earlier successful tool results remain valid; do not repeat successful writes. Return ONE corrected JSON action: query with SQL only, report with a valid request only (query is required, use empty string when not searching), remember with remember.memories strings only, or answer with text only. Never use a demographic action. Do not claim the rejected action succeeded.",
+                    },
+                ],
             }
         return {"model_calls": state["model_calls"] + 1, "answer": partial_answer(state, f"[{code}] {message}")}
 
@@ -264,8 +335,9 @@ class AnalyticalAgent:
         try:
             if self.memory is None:
                 raise UserMemoryError("User memory is not configured.")
-            observation = self.memory.remember(state["action"].remember,
-                                               question=state["question"], turn_id=state["turn_id"])
+            observation = self.memory.remember(
+                state["action"].remember, question=state["question"], turn_id=state["turn_id"]
+            )
             try:
                 update["user_memory"] = self.memory.load()
                 update["memory_status"] = "ready"
@@ -274,8 +346,11 @@ class AnalyticalAgent:
         except UserMemoryError as error:
             observation = {"status": "memory", "saved": False, "message": str(error)}
         except Exception:
-            observation = {"status": "memory", "saved": False,
-                           "message": "Memory write was not confirmed. Inspect /memories before retrying."}
+            observation = {
+                "status": "memory",
+                "saved": False,
+                "message": "Memory write was not confirmed. Inspect /memories before retrying.",
+            }
         update["observations"] = [*state["observations"], observation]
         # Always return to planning: remember never ends a mixed-intent turn.
         return update
@@ -290,8 +365,10 @@ class AnalyticalAgent:
             # Save only the previous completed response, never a model-provided
             # replacement or an in-progress answer from this invocation.
             observation = self.reports.execute(
-                request, conversation_id=self.conversation_id,
-                last_answer=self.last_answer, last_brands=self.last_answer_brands,
+                request,
+                conversation_id=self.conversation_id,
+                last_answer=self.last_answer,
+                last_brands=self.last_answer_brands,
             )
             if request.operation in {"save", "open", "list", "prepare_delete"} or not observation.get("reports"):
                 update["answer"] = render_reports(observation)
@@ -304,10 +381,14 @@ class AnalyticalAgent:
         except Exception:
             status = "error"
             update["answer"] = "Report operation failed. No success is confirmed; check the library before retrying."
-        logger.info("agent_report_completed", extra={
-            "turn_id": state["turn_id"], "action": request.operation,
-            "status": status,
-        })
+        logger.info(
+            "agent_report_completed",
+            extra={
+                "turn_id": state["turn_id"],
+                "action": request.operation,
+                "status": status,
+            },
+        )
         return update
 
     def _query(self, state: AgentState) -> dict:
@@ -319,7 +400,9 @@ class AnalyticalAgent:
         spent = reserved
         try:
             result = self.query_service.execute(
-                action.sql, allowed_brands=frozenset(self.allowed_brands), scan_budget_bytes=remaining,
+                action.sql,
+                allowed_brands=frozenset(self.allowed_brands),
+                scan_budget_bytes=remaining,
                 turn_id=state["turn_id"],
             )
             spent = max(result.estimated_bytes, result.bytes_billed or 0, result.bytes_processed or 0)
@@ -331,15 +414,24 @@ class AnalyticalAgent:
                 observation["query_id"] = error.query_id
             if action.action == "query":
                 try:
-                    observation["attempted_sql"] = check_text(action.sql)[:self.limits.max_observation_chars // 2]
+                    observation["attempted_sql"] = check_text(action.sql)[: self.limits.max_observation_chars // 2]
                     observation["attempted_sql_truncated"] = len(action.sql) > self.limits.max_observation_chars // 2
                 except ResultGuardError:
                     pass  # Do not echo suspicious literals back into model input.
             errors = state["consecutive_errors"] + 1
-            if error.stage in {"authorization", "validation", "dry_run"} or error.code in {"access_denied", "invalid_sql", "cost_limit", "estimate_unavailable"}:
+            if error.stage in {"authorization", "validation", "dry_run"} or error.code in {
+                "access_denied",
+                "invalid_sql",
+                "cost_limit",
+                "estimate_unavailable",
+            }:
                 spent = 0  # These errors happen before job execution.
         except ResultGuardError:
-            observation = {"status": "error", "code": "unsafe_result", "message": "Result was withheld by the output guard."}
+            observation = {
+                "status": "error",
+                "code": "unsafe_result",
+                "message": "Result was withheld by the output guard.",
+            }
             errors = state["consecutive_errors"] + 1
         except Exception:
             observation = {"status": "error", "code": "query_failed", "message": "The query could not be completed."}
@@ -351,11 +443,16 @@ class AnalyticalAgent:
             "consecutive_errors": errors,
             "scan_bytes_used": state["scan_bytes_used"] + spent,
         }
-        logger.info("agent_observation", extra={
-            "turn_id": state["turn_id"], "query_id": observation.get("query_id"),
-            "status": observation["status"],
-            "error_code": observation.get("code"), "query_count": update["queries"],
-        })
+        logger.info(
+            "agent_observation",
+            extra={
+                "turn_id": state["turn_id"],
+                "query_id": observation.get("query_id"),
+                "status": observation["status"],
+                "error_code": observation.get("code"),
+                "query_count": update["queries"],
+            },
+        )
         if errors >= self.limits.max_consecutive_errors or observation.get("code") in _STOP_CODES:
             update["answer"] = partial_answer({**state, **update}, "Analysis stopped after a query failure.")
         return update

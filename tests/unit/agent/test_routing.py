@@ -10,7 +10,10 @@ class RouteAfterPlanTests(unittest.TestCase):
             ({"answer": "done", "action": None}, "end"),
             ({"answer": None, "action": None}, "plan"),
             ({"answer": None, "action": AgentAction(action="remember", remember={"memories": ["x"]})}, "remember"),
-            ({"answer": None, "action": AgentAction(action="report", report={"operation": "list", "query": ""})}, "reports"),
+            (
+                {"answer": None, "action": AgentAction(action="report", report={"operation": "list", "query": ""})},
+                "reports",
+            ),
             ({"answer": None, "action": AgentAction(action="query", sql="SELECT 1")}, "query"),
         )
         for state, expected in cases:

@@ -18,22 +18,39 @@ class ModelErrorTests(unittest.TestCase):
             config = json.loads(request.content)["generationConfig"]
             self.assertNotIn("responseSchema", config)
             self.assertFalse(config["responseJsonSchema"]["additionalProperties"])
-            return httpx.Response(200, json={
-                "candidates": [{"content": {"role": "model", "parts": [
-                    {"text": '{"action":"answer","answer":"I am a retail analyst."}'},
-                ]}, "finishReason": "STOP"}],
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "candidates": [
+                        {
+                            "content": {
+                                "role": "model",
+                                "parts": [
+                                    {"text": '{"action":"answer","answer":"I am a retail analyst."}'},
+                                ],
+                            },
+                            "finishReason": "STOP",
+                        }
+                    ],
+                },
+            )
 
         transport = httpx.Client(transport=httpx.MockTransport(handler))
-        client = genai.Client(api_key="offline-test-key", http_options=types.HttpOptions(
-            httpx_client=transport, retry_options=types.HttpRetryOptions(attempts=1),
-        ))
+        client = genai.Client(
+            api_key="offline-test-key",
+            http_options=types.HttpOptions(
+                httpx_client=transport,
+                retry_options=types.HttpRetryOptions(attempts=1),
+            ),
+        )
         self.addCleanup(client.close)
         with tracing_context(enabled=False):
             response = client.models.generate_content(
-                model="offline-test-model", contents="hello",
+                model="offline-test-model",
+                contents="hello",
                 config=types.GenerateContentConfig(
-                    response_mime_type="application/json", response_json_schema=AgentAction.model_json_schema(),
+                    response_mime_type="application/json",
+                    response_json_schema=AgentAction.model_json_schema(),
                 ),
             )
         self.assertEqual(AgentAction.model_validate_json(response_text(response)).action, "answer")

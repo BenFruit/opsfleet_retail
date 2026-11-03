@@ -26,37 +26,53 @@ _IDENTITY_FUNCTIONS = {"SESSION_USER", "CURRENT_USER", "USER", "SYSTEM_USER", "E
 def _is_wildcard_projection(node) -> bool:
     """Any `*` except the argument of a plain COUNT(*)."""
     return isinstance(node, exp.Star) and not (
-        isinstance(node.parent, exp.Count) and node.parent.this is node and not any(node.args.values()))
+        isinstance(node.parent, exp.Count) and node.parent.this is node and not any(node.args.values())
+    )
 
 
 # Checked for every syntax node, in this order.
 _NODE_RULES = (
-    (lambda node: isinstance(node, (exp.DML, exp.DDL, exp.Command, exp.Into, exp.Parameter, exp.Placeholder)),
-     "Only read-only SQL without custom parameters is allowed"),
-    (lambda node: isinstance(node, (exp.Anonymous, exp.Dot)),
-     "Unknown, remote or user-defined functions are not allowed"),
-    (lambda node: isinstance(node, exp.Func) and node.sql_name() in _IDENTITY_FUNCTIONS,
-     "Identity and external-data functions are not allowed"),
+    (
+        lambda node: isinstance(node, (exp.DML, exp.DDL, exp.Command, exp.Into, exp.Parameter, exp.Placeholder)),
+        "Only read-only SQL without custom parameters is allowed",
+    ),
+    (
+        lambda node: isinstance(node, (exp.Anonymous, exp.Dot)),
+        "Unknown, remote or user-defined functions are not allowed",
+    ),
+    (
+        lambda node: isinstance(node, exp.Func) and node.sql_name() in _IDENTITY_FUNCTIONS,
+        "Identity and external-data functions are not allowed",
+    ),
     (_is_wildcard_projection, "Use explicit columns, not wildcard projections"),
 )
 
 # Checked for every physical table source, in this order.
 _TABLE_RULES = (
-    (lambda table: table.catalog != CATALOG_NAME or table.db != DB_NAME or table.name not in TABLE_POLICIES,
-     "Table is outside the allowed sources"),
-    (lambda table: not all(isinstance(table.args.get(key), exp.Identifier) for key in ("this", "db", "catalog")),
-     "Only ordinary physical table sources are allowed"),
-    (lambda table: any(value for key, value in table.args.items() if key not in {"this", "db", "catalog", "alias"}),
-     "Table source modifiers are not supported"),
-    (lambda table: table.args.get("alias") and table.args["alias"].args.get("columns"),
-     "Physical table column-renaming aliases are not supported"),
+    (
+        lambda table: table.catalog != CATALOG_NAME or table.db != DB_NAME or table.name not in TABLE_POLICIES,
+        "Table is outside the allowed sources",
+    ),
+    (
+        lambda table: not all(isinstance(table.args.get(key), exp.Identifier) for key in ("this", "db", "catalog")),
+        "Only ordinary physical table sources are allowed",
+    ),
+    (
+        lambda table: any(value for key, value in table.args.items() if key not in {"this", "db", "catalog", "alias"}),
+        "Table source modifiers are not supported",
+    ),
+    (
+        lambda table: table.args.get("alias") and table.args["alias"].args.get("columns"),
+        "Physical table column-renaming aliases are not supported",
+    ),
 )
 
 # Every column of the allowed tables, so SQLGlot can resolve and qualify references.
-_QUALIFY_SCHEMA = {CATALOG_NAME: {DB_NAME: {
-    table: {column: "UNKNOWN" for column in policies}
-    for table, policies in TABLE_POLICIES.items()
-}}}
+_QUALIFY_SCHEMA = {
+    CATALOG_NAME: {
+        DB_NAME: {table: {column: "UNKNOWN" for column in policies} for table, policies in TABLE_POLICIES.items()}
+    }
+}
 
 
 def physical_tables(tree):
@@ -105,7 +121,11 @@ def _check_each(items, rules) -> None:
 
 
 def _check_output_names(tree) -> None:
-    if any(item.alias_or_name.lower() == COHORT_COLUMN for select in tree.find_all(exp.Select) for item in select.expressions):
+    if any(
+        item.alias_or_name.lower() == COHORT_COLUMN
+        for select in tree.find_all(exp.Select)
+        for item in select.expressions
+    ):
         raise SQLValidationError("The cohort output name is reserved for trusted code")
     if len(tree.named_selects) != len(set(tree.named_selects)):
         raise SQLValidationError("Use unique output column aliases")

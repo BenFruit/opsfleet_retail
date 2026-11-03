@@ -7,9 +7,12 @@ from retail_agent.observability import tracing
 from retail_agent.settings import Settings
 from support.demo_access import DEMO_ENTITLEMENTS
 
-
-LANGFUSE = {"langfuse_tracing_enabled": True, "langfuse_public_key": "pk-test",
-            "langfuse_secret_key": "sk-test", "langfuse_base_url": "http://localhost:3000"}
+LANGFUSE = {
+    "langfuse_tracing_enabled": True,
+    "langfuse_public_key": "pk-test",
+    "langfuse_secret_key": "sk-test",
+    "langfuse_base_url": "http://localhost:3000",
+}
 
 
 def settings(**values) -> Settings:
@@ -46,7 +49,9 @@ class TracingTests(unittest.TestCase):
         handler.assert_called_once_with(public_key="pk-test")
         tracing.trace_generation("test-model", "question", "instructions")
         client.start_as_current_observation.assert_called_once_with(
-            as_type="generation", name="Gemini", model="test-model",
+            as_type="generation",
+            name="Gemini",
+            model="test-model",
             input={"prompt": "question", "system_instruction": "instructions"},
         )
         tracing.shutdown_tracing()
@@ -71,10 +76,18 @@ class TracingTests(unittest.TestCase):
         from retail_agent.data.query_service import QueryLimits
 
         os.environ["LANGSMITH_TRACING"] = "true"  # Must not enable a second exporter.
-        keys = {**LANGFUSE, "langfuse_public_key": "pk-offline-span-test", "langfuse_secret_key": "sk-offline-span-test"}
+        keys = {
+            **LANGFUSE,
+            "langfuse_public_key": "pk-offline-span-test",
+            "langfuse_secret_key": "sk-offline-span-test",
+        }
         exporter = InMemorySpanExporter()
-        client = Langfuse(public_key=keys["langfuse_public_key"], secret_key=keys["langfuse_secret_key"],
-                          base_url=keys["langfuse_base_url"], span_exporter=exporter)
+        client = Langfuse(
+            public_key=keys["langfuse_public_key"],
+            secret_key=keys["langfuse_secret_key"],
+            base_url=keys["langfuse_base_url"],
+            span_exporter=exporter,
+        )
         tracing.configure_tracing(settings(**keys))  # Same public key: reuses the exporter above.
         self.addCleanup(tracing.shutdown_tracing)
         self.addCleanup(client.shutdown)

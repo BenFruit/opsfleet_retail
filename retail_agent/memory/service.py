@@ -8,7 +8,6 @@ from retail_agent.memory.models import MAX_ENTRIES, MAX_ENTRY_CHARS, RememberReq
 from retail_agent.memory.repository import MemoryCapacityError
 from retail_agent.safety.sensitive_text import check_text
 
-
 logger = logging.getLogger(__name__)
 
 _LIMIT_REACHED = f"Memory limit reached ({MAX_ENTRIES} entries). Forget an old entry first"
@@ -33,11 +32,15 @@ class UserMemory:
                 result.append({"memory_id": row["memory_id"], "text": check_text(row["content"])})
             return result
         except Exception:
-            raise UserMemoryError("User memory is unavailable. Analysis can continue without saved preferences.") from None
+            raise UserMemoryError(
+                "User memory is unavailable. Analysis can continue without saved preferences."
+            ) from None
 
     def remember(self, request: RememberRequest, *, question, turn_id):
         if not explicit_remember(question):
-            raise UserMemoryError("Persistent memory requires an explicit 'remember' request; one-off formatting is not saved.")
+            raise UserMemoryError(
+                "Persistent memory requires an explicit 'remember' request; one-off formatting is not saved."
+            )
         try:
             known = {memory_key(item["text"]) for item in self.load()}
             entries = {}
@@ -50,17 +53,33 @@ class UserMemory:
             if len(known) + len(entries) > MAX_ENTRIES:
                 raise UserMemoryError(f"{_LIMIT_REACHED}.")
             # Obtain all embeddings before the single atomic database write.
-            prepared = [{"key": key, "text": text, "vector": self.embedder.embed(
-                text, document=True, title="User memory", observation_name="memory_embedding",
-            )} for key, text in entries.items()]
+            prepared = [
+                {
+                    "key": key,
+                    "text": text,
+                    "vector": self.embedder.embed(
+                        text,
+                        document=True,
+                        title="User memory",
+                        observation_name="memory_embedding",
+                    ),
+                }
+                for key, text in entries.items()
+            ]
             count = self._add(prepared, turn_id) if prepared else 0
             logger.info("user_memory_saved", extra={"row_count": count, "status": "ok"})
-            return {"status": "memory", "saved": True, "count": count,
-                    "message": f"Memory saved: {count} new entries; existing exact duplicates were not added."}
+            return {
+                "status": "memory",
+                "saved": True,
+                "count": count,
+                "message": f"Memory saved: {count} new entries; existing exact duplicates were not added.",
+            }
         except UserMemoryError:
             raise
         except Exception:
-            raise UserMemoryError("Memory was not confirmed saved. Analysis can continue; inspect /memories before retrying.") from None
+            raise UserMemoryError(
+                "Memory was not confirmed saved. Analysis can continue; inspect /memories before retrying."
+            ) from None
 
     def forget(self, memory_id=None):
         if memory_id is not None and not re.fullmatch(r"[0-9a-f]{32}", memory_id):
@@ -74,8 +93,9 @@ class UserMemory:
 
     def _add(self, prepared: list[dict], turn_id) -> int:
         try:
-            return self.repository.add(self.manager_id, prepared, max_entries=MAX_ENTRIES,
-                                       model=self.embedder.model, turn_id=turn_id)
+            return self.repository.add(
+                self.manager_id, prepared, max_entries=MAX_ENTRIES, model=self.embedder.model, turn_id=turn_id
+            )
         except MemoryCapacityError:
             # A concurrent save filled the library after the early check above.
             raise UserMemoryError(f"{_LIMIT_REACHED}; nothing new was saved.") from None

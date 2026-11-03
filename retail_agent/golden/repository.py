@@ -38,8 +38,15 @@ class GoldenRepository:
                     "ON CONFLICT (trio_id) DO UPDATE SET version = EXCLUDED.version, content_hash = EXCLUDED.content_hash, "
                     "document = EXCLUDED.document, search_text = EXCLUDED.search_text, embedding = EXCLUDED.embedding, "
                     "embedding_model = EXCLUDED.embedding_model, ingested_at = CURRENT_TIMESTAMP",
-                    (trio.id, trio.version, trio.content_hash(), Jsonb(trio.model_dump(mode="json")),
-                     trio.search_text(), vector_literal(vector), model),
+                    (
+                        trio.id,
+                        trio.version,
+                        trio.content_hash(),
+                        Jsonb(trio.model_dump(mode="json")),
+                        trio.search_text(),
+                        vector_literal(vector),
+                        model,
+                    ),
                 )
             if remove:
                 conn.execute("DELETE FROM golden_trios WHERE trio_id = ANY(%s::text[])", (remove,))

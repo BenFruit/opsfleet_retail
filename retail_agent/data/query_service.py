@@ -14,7 +14,6 @@ from retail_agent.data.errors import classify_backend_error
 from retail_agent.sql.scope import scope_query
 from retail_agent.sql.validator import SQLValidationError, validate_query
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -107,11 +106,15 @@ class _QueryRun:
             self._log_failure(name, code, error_type=type(error).__name__)
             raise QueryServiceError(code, message, stage=name, query_id=self.query_id) from None
 
-    def _log_failure(self, stage: str, code: str, *, validation_reason: str | None = None,
-                     error_type: str | None = None) -> None:
+    def _log_failure(
+        self, stage: str, code: str, *, validation_reason: str | None = None, error_type: str | None = None
+    ) -> None:
         extra = {
-            **self.correlation, "stage": stage, "error_code": code,
-            "duration_ms": self.duration_ms(), "validation_reason": validation_reason,
+            **self.correlation,
+            "stage": stage,
+            "error_code": code,
+            "duration_ms": self.duration_ms(),
+            "validation_reason": validation_reason,
         }
         if error_type is not None:
             extra["error_type"] = error_type  # Exception class name only, never its text.
@@ -124,7 +127,11 @@ class QueryService:
         self.limits = limits if limits is not None else QueryLimits()
 
     def execute(
-        self, sql: str, *, allowed_brands, scan_budget_bytes: int | None = None,
+        self,
+        sql: str,
+        *,
+        allowed_brands,
+        scan_budget_bytes: int | None = None,
         turn_id: str | None = None,
     ) -> QueryResult:
         """Run model SQL within the caller's trusted brand entitlements.
@@ -161,18 +168,28 @@ class QueryService:
             size = self._result_size(execution.rows)
 
         result = QueryResult(
-            query_id=run.query_id, rows=execution.rows, truncated=execution.truncated,
-            estimated_bytes=estimated_bytes, bytes_processed=execution.bytes_processed,
+            query_id=run.query_id,
+            rows=execution.rows,
+            truncated=execution.truncated,
+            estimated_bytes=estimated_bytes,
+            bytes_processed=execution.bytes_processed,
             bytes_billed=execution.bytes_billed,
             minimum_cohort_size=self.limits.minimum_cohort_size if query.demographic else None,
-            columns=query.columns, query_context=query.context,
+            columns=query.columns,
+            query_context=query.context,
         )
-        logger.info("query_completed", extra={
-            **run.correlation, "row_count": len(result.rows),
-            "truncated": result.truncated, "result_bytes": size,
-            "bytes_processed": result.bytes_processed, "bytes_billed": result.bytes_billed,
-            "duration_ms": run.duration_ms(),
-        })
+        logger.info(
+            "query_completed",
+            extra={
+                **run.correlation,
+                "row_count": len(result.rows),
+                "truncated": result.truncated,
+                "result_bytes": size,
+                "bytes_processed": result.bytes_processed,
+                "bytes_billed": result.bytes_billed,
+                "duration_ms": run.duration_ms(),
+            },
+        )
         return result
 
     def _byte_limit(self, scan_budget_bytes: int | None) -> int:
@@ -205,7 +222,9 @@ class QueryService:
     def _dry_run(self, scoped_sql: str, brands: tuple[str, ...], byte_limit: int) -> int:
         """Estimate the exact SQL and parameters that will run; refuse over-budget scans."""
         estimated_bytes = self.runner.dry_run(
-            scoped_sql, allowed_brands=brands, api_timeout_seconds=self.limits.api_timeout_seconds,
+            scoped_sql,
+            allowed_brands=brands,
+            api_timeout_seconds=self.limits.api_timeout_seconds,
         )
         if type(estimated_bytes) is not int or estimated_bytes < 0:
             raise QueryServiceError("estimate_unavailable", "Could not verify the query scan estimate.")
@@ -229,7 +248,10 @@ class QueryService:
 
 def _authorized_brands(allowed_brands) -> tuple[str, ...]:
     """Trusted entitlements as a sorted tuple; a bare string or blank brand is refused."""
-    if (isinstance(allowed_brands, str) or not allowed_brands
-            or any(not isinstance(brand, str) or not brand.strip() for brand in allowed_brands)):
+    if (
+        isinstance(allowed_brands, str)
+        or not allowed_brands
+        or any(not isinstance(brand, str) or not brand.strip() for brand in allowed_brands)
+    ):
         raise QueryServiceError("access_denied", "No authorized brands for this user.")
     return tuple(sorted(allowed_brands))

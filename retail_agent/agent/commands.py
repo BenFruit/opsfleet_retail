@@ -11,7 +11,6 @@ from retail_agent.memory.models import UserMemoryError
 from retail_agent.observability.tracing import trace_operation
 from retail_agent.reports.models import ReportError
 
-
 logger = logging.getLogger(__name__)
 
 MEMORY_COMMANDS = {"/memories", "/forget-all"}
@@ -38,7 +37,9 @@ def _memory_command(command: str, memory) -> str:
                 raise UserMemoryError("User memory is not configured.")
             if command == "/memories":
                 entries = memory.load()
-                text = "\n".join(f"{item['memory_id']} | {item['text']}" for item in entries) or "No saved user memories."
+                text = (
+                    "\n".join(f"{item['memory_id']} | {item['text']}" for item in entries) or "No saved user memories."
+                )
             else:
                 text = memory.forget(None if command == "/forget-all" else command.split(maxsplit=1)[1])
         except UserMemoryError as error:

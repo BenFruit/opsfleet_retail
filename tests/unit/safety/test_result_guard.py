@@ -9,7 +9,6 @@ from retail_agent.safety.result_guard import make_observation
 from retail_agent.safety.sensitive_text import check_text
 from retail_agent.sql.validator import validate_query
 
-
 SQL = "SELECT p.name FROM `bigquery-public-data.thelook_ecommerce.products` AS p"
 
 
@@ -32,6 +31,7 @@ class ResultGuardTests(unittest.TestCase):
         base = "SELECT SUM(oi.sale_price) AS revenue FROM `bigquery-public-data.thelook_ecommerce.order_items` AS oi"
         data = result([{"revenue": 10}])
         from dataclasses import replace
+
         data = replace(data, columns=("revenue",), query_context={"tool": "sql", "executed_sql": base})
         observation = make_observation(base, data, max_chars=1000)
         self.assertEqual(observation["query_context"]["executed_sql"], base)
@@ -56,7 +56,9 @@ class ResultGuardTests(unittest.TestCase):
     def test_scalar_normalization(self):
         # Use actual catalog columns, assigning a date to this fixture's name value.
         sql = "SELECT p.id, p.cost, p.name FROM `bigquery-public-data.thelook_ecommerce.products` AS p"
-        observation = make_observation(sql, result([{"id": 1, "cost": Decimal("1.23"), "name": date(2026, 1, 1)}]), max_chars=1000)
+        observation = make_observation(
+            sql, result([{"id": 1, "cost": Decimal("1.23"), "name": date(2026, 1, 1)}]), max_chars=1000
+        )
         self.assertEqual(observation["rows"], [{"id": 1, "cost": "1.23", "name": "2026-01-01"}])
 
     def test_empty_result(self):
@@ -100,11 +102,13 @@ class ResultGuardTests(unittest.TestCase):
         with self.assertRaises(ResultGuardError):
             make_observation(
                 "SELECT p.id AS x, p.name AS x FROM `bigquery-public-data.thelook_ecommerce.products` AS p",
-                result([]), max_chars=1000,
+                result([]),
+                max_chars=1000,
             )
 
     def test_unnamed_computed_columns_get_stable_aliases(self):
         from retail_agent.sql.validator import validate_query
+
         tree = validate_query("SELECT COUNT(*) FROM `bigquery-public-data.thelook_ecommerce.products` AS p")
         self.assertEqual(len(tree.named_selects), 1)
         self.assertTrue(tree.named_selects[0])

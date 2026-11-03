@@ -22,7 +22,6 @@ from retail_agent.security.access import Entitlements
 from retail_agent.settings import Settings
 from retail_agent.storage.postgres import connection_factory
 
-
 logger = logging.getLogger("retail_agent.startup")
 
 # Startup stage -> safe operator hint.
@@ -48,6 +47,7 @@ class StartupError(RuntimeError):
 @dataclass(frozen=True)
 class ChatOptions:
     """Per-run choices from the command line (Settings holds the .env values)."""
+
     project: str | None
     manager: str
     access_config: str = "access.local.json"
@@ -101,16 +101,26 @@ class ChatApplication:
             self.embedder = Embedder.from_settings(settings)
             golden = settings.golden_retrieval_enabled
             agent = build_agent(
-                self.llm, schema, QueryService(self.runner, QueryLimits(minimum_cohort_size=options.min_cohort_size)),
-                manager_id=options.manager, entitlements=entitlements,
-                connect=connection_factory(settings), embedder=self.embedder,
-                golden=golden, memory=True, persona_doc_id=settings.persona_google_doc_id,
+                self.llm,
+                schema,
+                QueryService(self.runner, QueryLimits(minimum_cohort_size=options.min_cohort_size)),
+                manager_id=options.manager,
+                entitlements=entitlements,
+                connect=connection_factory(settings),
+                embedder=self.embedder,
+                golden=golden,
+                memory=True,
+                persona_doc_id=settings.persona_google_doc_id,
                 golden_min_similarity=settings.golden_min_similarity,
             )
-        logger.info("startup_completed", extra={
-            "model": self.llm.model, "fallback": self.llm.fallback_model is not None,
-            "status": "golden_on" if golden else "golden_off",
-        })
+        logger.info(
+            "startup_completed",
+            extra={
+                "model": self.llm.model,
+                "fallback": self.llm.fallback_model is not None,
+                "status": "golden_on" if golden else "golden_off",
+            },
+        )
         return agent
 
     def close(self) -> None:

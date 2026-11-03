@@ -10,7 +10,6 @@ from retail_agent.memory.service import UserMemory
 from retail_agent.settings import Settings
 from retail_agent.storage.postgres import connection_factory
 
-
 VECTOR = [1.0] + [0.0] * 767
 
 
@@ -43,7 +42,9 @@ class MemoryPostgresTests(unittest.TestCase):
         self.assertEqual(restarted.load()[0]["text"], "Prefers bullets.")
         self.assertEqual(repo.delete(other, own[0]["memory_id"]), 0)
         with repo.connection() as conn:
-            size = conn.execute("SELECT vector_dims(embedding) AS dimensions FROM user_memories WHERE owner_id=%s", (owner,)).fetchone()
+            size = conn.execute(
+                "SELECT vector_dims(embedding) AS dimensions FROM user_memories WHERE owner_id=%s", (owner,)
+            ).fetchone()
             self.assertEqual(size["dimensions"], 768)
         self.assertEqual(repo.delete(owner, own[0]["memory_id"]), 1)
         self.assertEqual(len(self.rows(other)), 1)

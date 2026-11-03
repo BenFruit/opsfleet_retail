@@ -6,7 +6,6 @@ from retail_agent.llm.embeddings import Embedder, EmbeddingError, vector_literal
 from retail_agent.safety.errors import ResultGuardError
 from retail_agent.settings import Settings
 
-
 VECTOR = [1.0] + [0.0] * 767
 
 

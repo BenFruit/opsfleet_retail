@@ -4,15 +4,14 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import ANY, Mock, patch
 
-from langsmith import get_tracing_context
 from google.genai import errors as genai_errors
+from langsmith import get_tracing_context
 
 from retail_agent.agent.models import AgentAction, AgentLimits
 from retail_agent.agent.orchestrator import AnalyticalAgent
 from retail_agent.data.query_service import QueryLimits, QueryResult, QueryService, QueryServiceError
 from retail_agent.llm.analyst import Analyst
 from support.demo_access import DEMO_ENTITLEMENTS, patch_agent_loggers
-
 
 STATUS_SQL = "SELECT DISTINCT oi.status FROM `bigquery-public-data.thelook_ecommerce.order_items` AS oi"
 REVENUE_SQL = "SELECT SUM(oi.sale_price) AS revenue FROM `bigquery-public-data.thelook_ecommerce.order_items` AS oi"
@@ -48,7 +47,9 @@ class AnalyticalAgentTests(unittest.TestCase):
         self.assertEqual(turn.model_calls, 2)
         self.assertEqual(turn.scan_bytes_used, 10)
         self.service.execute.assert_called_once_with(
-            REVENUE_SQL, allowed_brands=frozenset({"Brand A", "Brand B"}), scan_budget_bytes=300_000_000,
+            REVENUE_SQL,
+            allowed_brands=frozenset({"Brand A", "Brand B"}),
+            scan_budget_bytes=300_000_000,
             turn_id=ANY,
         )
         observation = self.analyst.decide.call_args.kwargs["observations"][0]
@@ -66,7 +67,9 @@ class AnalyticalAgentTests(unittest.TestCase):
 
     def test_final_query_failure_includes_safe_cause(self):
         self.analyst.decide.return_value = query()
-        self.service.execute.side_effect = QueryServiceError("invalid_sql", "Column is ambiguous; use an explicit table alias")
+        self.service.execute.side_effect = QueryServiceError(
+            "invalid_sql", "Column is ambiguous; use an explicit table alias"
+        )
         turn = self.agent.ask("Give me the top 10 brands")
         self.assertIn("[invalid_sql]", turn.answer)
         self.assertIn("Column is ambiguous", turn.answer)
@@ -79,7 +82,13 @@ class AnalyticalAgentTests(unittest.TestCase):
         self.assertNotIn("authorized_brand_count", context["budget"])
 
     def test_first_question_survives_history_trimming(self):
-        self.agent = AnalyticalAgent(self.analyst, self.service, manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS, limits=AgentLimits(max_history_turns=2))
+        self.agent = AnalyticalAgent(
+            self.analyst,
+            self.service,
+            manager_id="manager_a",
+            entitlements=DEMO_ENTITLEMENTS,
+            limits=AgentLimits(max_history_turns=2),
+        )
         self.analyst.decide.return_value = answer("Brief answer")
         for question in ("Hello", "Two", "Three", "What was my first question?"):
             self.agent.ask(question)
@@ -199,7 +208,13 @@ class AnalyticalAgentTests(unittest.TestCase):
         self.assertEqual(self.analyst.decide.call_args.kwargs["observations"][0]["status"], "empty")
 
     def test_max_queries_stops_model_that_keeps_querying(self):
-        self.agent = AnalyticalAgent(self.analyst, self.service, manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS, limits=AgentLimits(max_queries=2))
+        self.agent = AnalyticalAgent(
+            self.analyst,
+            self.service,
+            manager_id="manager_a",
+            entitlements=DEMO_ENTITLEMENTS,
+            limits=AgentLimits(max_queries=2),
+        )
         self.analyst.decide.return_value = query()
         turn = self.agent.ask("Revenue?")
         self.assertEqual(turn.queries, 2)
@@ -207,14 +222,26 @@ class AnalyticalAgentTests(unittest.TestCase):
         self.assertIn("budget", turn.answer)
 
     def test_max_model_calls_is_enforced(self):
-        self.agent = AnalyticalAgent(self.analyst, self.service, manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS, limits=AgentLimits(max_model_calls=1))
+        self.agent = AnalyticalAgent(
+            self.analyst,
+            self.service,
+            manager_id="manager_a",
+            entitlements=DEMO_ENTITLEMENTS,
+            limits=AgentLimits(max_model_calls=1),
+        )
         self.analyst.decide.return_value = query()
         turn = self.agent.ask("Revenue?")
         self.assertEqual(turn.model_calls, 1)
         self.assertEqual(turn.queries, 1)
 
     def test_question_budget_is_forwarded_and_exhaustion_stops_queries(self):
-        self.agent = AnalyticalAgent(self.analyst, self.service, manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS, limits=AgentLimits(max_scan_bytes=10))
+        self.agent = AnalyticalAgent(
+            self.analyst,
+            self.service,
+            manager_id="manager_a",
+            entitlements=DEMO_ENTITLEMENTS,
+            limits=AgentLimits(max_scan_bytes=10),
+        )
         self.analyst.decide.return_value = query()
         turn = self.agent.ask("Revenue?")
         self.assertEqual(turn.queries, 1)
@@ -293,7 +320,13 @@ class AnalyticalAgentTests(unittest.TestCase):
         self.analyst.decide.assert_not_called()
 
     def test_history_is_bounded(self):
-        self.agent = AnalyticalAgent(self.analyst, self.service, manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS, limits=AgentLimits(max_history_turns=2))
+        self.agent = AnalyticalAgent(
+            self.analyst,
+            self.service,
+            manager_id="manager_a",
+            entitlements=DEMO_ENTITLEMENTS,
+            limits=AgentLimits(max_history_turns=2),
+        )
         self.analyst.decide.return_value = answer("Brief answer")
         for question in ("One", "Two", "Three"):
             self.agent.ask(question)
@@ -311,6 +344,7 @@ class AnalyticalAgentTests(unittest.TestCase):
     def test_langfuse_callback_reaches_graph_with_turn_metadata(self):
         # Stub the graph to inspect configuration without exporting test data.
         callback = object()
+
         def invoke(state, config):
             self.assertIs(get_tracing_context()["enabled"], False)
             self.assertEqual(config["run_name"], "retail_question")
@@ -318,13 +352,16 @@ class AnalyticalAgentTests(unittest.TestCase):
             self.assertEqual(config["callbacks"], [callback])
             return {**state, "answer": "Schema information"}
 
-        with patch("retail_agent.agent.orchestrator.get_callbacks", return_value=[callback]):
-            with patch.object(self.agent.graph, "invoke", side_effect=invoke):
-                self.assertEqual(self.agent.ask("What data is available?").answer, "Schema information")
+        with (
+            patch("retail_agent.agent.orchestrator.get_callbacks", return_value=[callback]),
+            patch.object(self.agent.graph, "invoke", side_effect=invoke),
+        ):
+            self.assertEqual(self.agent.ask("What data is available?").answer, "Schema information")
 
     def test_action_shape_is_validated(self):
         for data in (
-            {"action": "query"}, {"action": "answer"},
+            {"action": "query"},
+            {"action": "answer"},
             {"action": "query", "sql": "SELECT 1", "answer": "both"},
             {"action": "delete", "answer": "delete"},
             {"action": "query", "sql": "SELECT 1", "manager_id": "other"},

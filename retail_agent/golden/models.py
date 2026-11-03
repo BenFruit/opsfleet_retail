@@ -13,7 +13,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
 TRIO_ID = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
 _NUMBER_IN_REPORT = re.compile(r"(?<![\w<])\d[\d,]*\.?\d*\s*(?:%|USD|\$)|\$\s*\d")
 
@@ -68,8 +67,13 @@ class GoldenTrio(BaseModel):
     def prompt_view(self, similarity: float) -> dict:
         """Bounded fields the planner sees; reviewer metadata stays out of the prompt."""
         return {
-            "trio_id": self.id, "version": self.version, "similarity": round(similarity, 3),
-            "question": self.question, "interpretation": self.interpretation,
-            "metric_definitions": self.metric_definitions, "grain": self.grain,
-            "reviewed_sql": self.sql, "report_example": self.analyst_report,
+            "trio_id": self.id,
+            "version": self.version,
+            "similarity": round(similarity, 3),
+            "question": self.question,
+            "interpretation": self.interpretation,
+            "metric_definitions": self.metric_definitions,
+            "grain": self.grain,
+            "reviewed_sql": self.sql,
+            "report_example": self.analyst_report,
         }

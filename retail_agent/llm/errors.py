@@ -21,13 +21,29 @@ class ModelResponseError(RuntimeError):
 
 # HTTP status of a Gemini APIError -> (code, message). "{status}" is filled in.
 _HTTP_ERRORS = {
-    429: ("model_rate_limited", "Gemini quota or rate limit was reached (HTTP 429). Check AI Studio quotas and try later."),
-    **dict.fromkeys((500, 502, 503, 504), (
-        "model_unavailable", "Gemini is temporarily unavailable or overloaded (HTTP {status}). Try again later.")),
-    **dict.fromkeys((401, 403), (
-        "model_access_denied", "Gemini denied access (HTTP {status}). Check the API key, project restrictions, and model access.")),
-    404: ("model_not_found", "Gemini model or endpoint was not found (HTTP 404). Check GEMINI_MODEL and its API availability."),
-    400: ("model_request_rejected", "Gemini rejected the request (HTTP 400). Check model capabilities and request configuration."),
+    429: (
+        "model_rate_limited",
+        "Gemini quota or rate limit was reached (HTTP 429). Check AI Studio quotas and try later.",
+    ),
+    **dict.fromkeys(
+        (500, 502, 503, 504),
+        ("model_unavailable", "Gemini is temporarily unavailable or overloaded (HTTP {status}). Try again later."),
+    ),
+    **dict.fromkeys(
+        (401, 403),
+        (
+            "model_access_denied",
+            "Gemini denied access (HTTP {status}). Check the API key, project restrictions, and model access.",
+        ),
+    ),
+    404: (
+        "model_not_found",
+        "Gemini model or endpoint was not found (HTTP 404). Check GEMINI_MODEL and its API availability.",
+    ),
+    400: (
+        "model_request_rejected",
+        "Gemini rejected the request (HTTP 400). Check model capabilities and request configuration.",
+    ),
 }
 _OTHER_HTTP_ERROR = ("model_api_error", "Gemini API returned HTTP {status}. Check model/API configuration.")
 
@@ -35,33 +51,58 @@ _OTHER_HTTP_ERROR = ("model_api_error", "Gemini API returned HTTP {status}. Chec
 # (status, markers, code, message). The first rule whose status matches and
 # whose message contains any marker wins.
 _MESSAGE_RULES = (
-    (429, ("perday", "per_day", "per day", "daily"), "model_daily_quota",
-     "Gemini daily quota is exhausted (HTTP 429). Check AI Studio quotas or use another enabled model."),
-    (400, ("api_key_invalid", "api key not valid", "api key expired"), "model_invalid_key",
-     "Gemini rejected the API key (HTTP 400). Check GEMINI_API_KEY."),
-    (400, ("schema", "additionalproperties", "response_mime_type", "responsemimetype"), "model_schema_rejected",
-     "Gemini rejected the structured-output schema or configuration (HTTP 400). Check model support and the response schema."),
+    (
+        429,
+        ("perday", "per_day", "per day", "daily"),
+        "model_daily_quota",
+        "Gemini daily quota is exhausted (HTTP 429). Check AI Studio quotas or use another enabled model.",
+    ),
+    (
+        400,
+        ("api_key_invalid", "api key not valid", "api key expired"),
+        "model_invalid_key",
+        "Gemini rejected the API key (HTTP 400). Check GEMINI_API_KEY.",
+    ),
+    (
+        400,
+        ("schema", "additionalproperties", "response_mime_type", "responsemimetype"),
+        "model_schema_rejected",
+        "Gemini rejected the structured-output schema or configuration (HTTP 400). Check model support and the response schema.",
+    ),
 )
 
 # Failures without an HTTP status, checked in order (httpx timeouts are also
 # transport errors, so they come first).
 _EXCEPTION_ERRORS = (
-    ((TimeoutError, httpx.TimeoutException), "model_timeout",
-     "The Gemini request timed out. Try again later or use a faster enabled model."),
-    ((httpx.TransportError,), "model_connection_failed",
-     "Could not connect to Gemini. Check the network or proxy and try again."),
-    ((ValueError, TypeError), "model_configuration_error",
-     "The model call failed local SDK/request validation. Check SDK compatibility and response-schema configuration."),
+    (
+        (TimeoutError, httpx.TimeoutException),
+        "model_timeout",
+        "The Gemini request timed out. Try again later or use a faster enabled model.",
+    ),
+    (
+        (httpx.TransportError,),
+        "model_connection_failed",
+        "Could not connect to Gemini. Check the network or proxy and try again.",
+    ),
+    (
+        (ValueError, TypeError),
+        "model_configuration_error",
+        "The model call failed local SDK/request validation. Check SDK compatibility and response-schema configuration.",
+    ),
 )
-_UNEXPECTED_ERROR = ("model_failed",
-                     "The model is unavailable or an unexpected local error occurred. See the safe error type in logs/agent.jsonl.")
+_UNEXPECTED_ERROR = (
+    "model_failed",
+    "The model is unavailable or an unexpected local error occurred. See the safe error type in logs/agent.jsonl.",
+)
 
 # Candidate finish reasons that mean the text is missing or unusable.
 _FINISH_REASON_ERRORS = {
     # Text may be present, but the JSON action is cut off.
     "MAX_TOKENS": ("model_output_limit", "Gemini reached its output-token limit before completing the response."),
-    **dict.fromkeys(("SAFETY", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "RECITATION"), (
-        "model_response_blocked", "Gemini withheld the response under its safety/content policy.")),
+    **dict.fromkeys(
+        ("SAFETY", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "RECITATION"),
+        ("model_response_blocked", "Gemini withheld the response under its safety/content policy."),
+    ),
 }
 # The API's default prompt_feedback value: it means "not blocked".
 _NOT_BLOCKED = "BLOCKED_REASON_UNSPECIFIED"
@@ -88,8 +129,11 @@ def _describe_api_error(error: genai_errors.APIError, metadata: dict) -> tuple[s
     # Inspect only to select fixed messages. Never return/log raw contents.
     provider_message = (error.message or "").lower()
     code, message = next(
-        ((code, message) for rule_status, markers, code, message in _MESSAGE_RULES
-         if rule_status == status and any(marker in provider_message for marker in markers)),
+        (
+            (code, message)
+            for rule_status, markers, code, message in _MESSAGE_RULES
+            if rule_status == status and any(marker in provider_message for marker in markers)
+        ),
         _HTTP_ERRORS.get(status, _OTHER_HTTP_ERROR),
     )
     message = message.format(status=status)
@@ -113,14 +157,21 @@ def _retry_after_seconds(response) -> int | None:
 def _describe_validation_error(error: ValidationError, metadata: dict) -> tuple[str, str, dict]:
     issues = error.errors(include_input=False, include_context=False, include_url=False)
     # Field names/types only. Never include input, Pydantic messages, or ctx.
-    metadata["validation_fields"] = sorted({
-        str(part) if part in {"action", "sql", "answer"} else "<other>"
-        for issue in issues[:5] for part in issue["loc"]
-    })
+    metadata["validation_fields"] = sorted(
+        {
+            str(part) if part in {"action", "sql", "answer"} else "<other>"
+            for issue in issues[:5]
+            for part in issue["loc"]
+        }
+    )
     metadata["validation_error_count"] = len(issues)
     if any(issue["type"] == "json_invalid" for issue in issues):
         return "model_invalid_json", "Gemini returned invalid or incomplete JSON, not a usable action.", metadata
-    return "model_invalid_action", "Gemini returned a structured response that does not match the required tool/answer format.", metadata
+    return (
+        "model_invalid_action",
+        "Gemini returned a structured response that does not match the required tool/answer format.",
+        metadata,
+    )
 
 
 def response_text(response) -> str:
@@ -142,7 +193,11 @@ def response_text(response) -> str:
         raise ModelResponseError(*_FINISH_REASON_ERRORS[finish])
     block_reason = getattr(getattr(response, "prompt_feedback", None), "block_reason", None)
     if block_reason and getattr(block_reason, "value", block_reason) != _NOT_BLOCKED:
-        raise ModelResponseError("model_response_blocked", "Gemini blocked the request under its safety/content policy.")
+        raise ModelResponseError(
+            "model_response_blocked", "Gemini blocked the request under its safety/content policy."
+        )
     if not response.text:
-        raise ModelResponseError("model_empty_response", "Gemini returned no text. This is different from an API overload or quota error.")
+        raise ModelResponseError(
+            "model_empty_response", "Gemini returned no text. This is different from an API overload or quota error."
+        )
     return response.text

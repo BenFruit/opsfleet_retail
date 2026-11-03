@@ -7,7 +7,6 @@ from retail_agent.golden.ingest import DEFAULT_BUCKET
 from retail_agent.golden.models import GoldenTrio
 from support.paths import REPO_ROOT
 
-
 BUCKET = REPO_ROOT / DEFAULT_BUCKET
 VECTOR = [0.0] * 767 + [1.0]
 

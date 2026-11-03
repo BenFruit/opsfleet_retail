@@ -3,7 +3,6 @@
 import logging
 from contextlib import nullcontext
 
-
 logger = logging.getLogger(__name__)
 _client = None
 _public_key = ""
@@ -46,7 +45,9 @@ def trace_generation(model: str, prompt: str, system_instruction: str | None, *,
     if _client is None:
         return nullcontext(None)
     return _client.start_as_current_observation(
-        as_type="generation", name=name, model=model,
+        as_type="generation",
+        name=name,
+        model=model,
         input={"prompt": prompt, "system_instruction": system_instruction},
     )
 

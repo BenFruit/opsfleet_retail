@@ -16,19 +16,34 @@ from retail_agent.reports.repository import ReportRepository
 from retail_agent.reports.service import ReportLibrary
 
 
-def build_agent(llm, schema, query_service, *, manager_id: str, entitlements, connect, embedder,
-                golden: bool, memory: bool, persona_doc_id: str, golden_min_similarity: float) -> AnalyticalAgent:
+def build_agent(
+    llm,
+    schema,
+    query_service,
+    *,
+    manager_id: str,
+    entitlements,
+    connect,
+    embedder,
+    golden: bool,
+    memory: bool,
+    persona_doc_id: str,
+    golden_min_similarity: float,
+) -> AnalyticalAgent:
     """One agent per manager session; connect is a storage connection factory.
 
     An empty persona_doc_id keeps the built-in presentation style.
     """
     persona = PersonaStyle(GoogleDocReader(persona_doc_id) if persona_doc_id else None)
     return AnalyticalAgent(
-        Analyst(llm, schema, persona_style=persona), query_service,
-        manager_id=manager_id, entitlements=entitlements,
+        Analyst(llm, schema, persona_style=persona),
+        query_service,
+        manager_id=manager_id,
+        entitlements=entitlements,
         reports=ReportLibrary(ReportRepository(connect), embedder, manager_id=manager_id, entitlements=entitlements),
         memory=UserMemory(MemoryRepository(connect), embedder, manager_id=manager_id) if memory else None,
         # The agent reads the index with its own read-only grant; ingestion is a separate job.
         golden=GoldenKnowledge(GoldenRepository(connect), embedder, min_similarity=golden_min_similarity)
-        if golden else None,
+        if golden
+        else None,
     )

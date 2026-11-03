@@ -12,7 +12,6 @@ import argparse
 import json
 from pathlib import Path
 
-
 DEFAULT_CASES = Path("golden/eval/retrieval_cases.json")
 
 
@@ -21,9 +20,9 @@ def score(results: list[dict], threshold: float, top_k: int = 3) -> dict:
     positives = [r for r in results if r["expected"]]
     negatives = [r for r in results if not r["expected"]]
     kept = [[trio for trio, sim in r["ranked"] if sim >= threshold][:top_k] for r in results]
-    hit1 = sum(1 for r, k in zip(results, kept) if r["expected"] and k[:1] == [r["expected"]])
-    recall3 = sum(1 for r, k in zip(results, kept) if r["expected"] and r["expected"] in k)
-    false_pos = sum(1 for r, k in zip(results, kept) if not r["expected"] and k)
+    hit1 = sum(1 for r, k in zip(results, kept, strict=True) if r["expected"] and k[:1] == [r["expected"]])
+    recall3 = sum(1 for r, k in zip(results, kept, strict=True) if r["expected"] and r["expected"] in k)
+    false_pos = sum(1 for r, k in zip(results, kept, strict=True) if not r["expected"] and k)
     return {
         "threshold": threshold,
         "hit_at_1": hit1 / len(positives) if positives else 0.0,
@@ -35,8 +34,10 @@ def score(results: list[dict], threshold: float, top_k: int = 3) -> dict:
 def best_threshold(results: list[dict]) -> dict:
     """Maximize recall@3 minus false positives; ties prefer the stricter threshold."""
     grid = [round(0.40 + step * 0.01, 2) for step in range(46)]
-    return max((score(results, t) for t in grid),
-               key=lambda m: (m["recall_at_3"] - m["negative_false_positive_rate"], m["threshold"]))
+    return max(
+        (score(results, t) for t in grid),
+        key=lambda m: (m["recall_at_3"] - m["negative_false_positive_rate"], m["threshold"]),
+    )
 
 
 def main(argv=None) -> int:
@@ -70,8 +71,10 @@ def main(argv=None) -> int:
         print(f"{mark} {top[1]:.3f} top={top[0]:<28} expected={r['expected'] or '-':<28} {r['question']}")
     pos = sorted(r["ranked"][0][1] for r in results if r["expected"] and r["ranked"])
     neg = sorted(r["ranked"][0][1] for r in results if not r["expected"] and r["ranked"])
-    print(f"\nTop similarity: positives min={pos[0]:.3f} median={pos[len(pos) // 2]:.3f}; "
-          f"negatives max={neg[-1]:.3f} median={neg[len(neg) // 2]:.3f}")
+    print(
+        f"\nTop similarity: positives min={pos[0]:.3f} median={pos[len(pos) // 2]:.3f}; "
+        f"negatives max={neg[-1]:.3f} median={neg[len(neg) // 2]:.3f}"
+    )
     for threshold in (0.5, 0.55, 0.6, 0.65, 0.7):
         print(json.dumps(score(results, threshold)))
     print("Best:", json.dumps(best_threshold(results)))

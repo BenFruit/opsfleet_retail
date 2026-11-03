@@ -37,7 +37,7 @@ def figures(text: str) -> list[tuple[str, float, float]]:
         if is_year or (decimals == 0 and value < 100 and not raw.startswith("$")):
             continue
         # A rounded figure may differ from the exact value by half its last digit.
-        tolerance = max(0.5 * 10 ** -decimals, 0.005 * abs(value))
+        tolerance = max(0.5 * 10**-decimals, 0.005 * abs(value))
         found.append((raw, value, tolerance))
     return found
 

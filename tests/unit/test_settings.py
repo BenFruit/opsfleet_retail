@@ -31,8 +31,9 @@ class SettingsTests(unittest.TestCase):
 
     def test_env_file_is_read_and_environment_wins(self):
         os.environ["GEMINI_MODEL"] = "from-environment"
-        settings = self.load("GEMINI_API_KEY=key\nGEMINI_MODEL=from-file\nGOLDEN_RETRIEVAL_ENABLED=false\n"
-                             "UNRELATED_VARIABLE=ignored\n")
+        settings = self.load(
+            "GEMINI_API_KEY=key\nGEMINI_MODEL=from-file\nGOLDEN_RETRIEVAL_ENABLED=false\nUNRELATED_VARIABLE=ignored\n"
+        )
         self.assertEqual(settings.gemini_api_key.get_secret_value(), "key")
         self.assertEqual(settings.gemini_model, "from-environment")
         self.assertFalse(settings.golden_retrieval_enabled)
@@ -58,6 +59,9 @@ class SettingsTests(unittest.TestCase):
 
     def test_components_do_not_read_the_environment(self):
         root = REPO_ROOT / "retail_agent"
-        offenders = [path.relative_to(root).as_posix() for path in root.rglob("*.py")
-                     if any(token in path.read_text(encoding="utf-8") for token in ("os.getenv", "os.environ", "load_dotenv"))]
+        offenders = [
+            path.relative_to(root).as_posix()
+            for path in root.rglob("*.py")
+            if any(token in path.read_text(encoding="utf-8") for token in ("os.getenv", "os.environ", "load_dotenv"))
+        ]
         self.assertEqual(offenders, [])

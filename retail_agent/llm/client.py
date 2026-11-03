@@ -1,11 +1,12 @@
 import logging
 import random
 import time
+from typing import TypeVar
 
 from google import genai
 from google.genai import types
-from typing import TypeVar
 from pydantic import BaseModel
+
 from retail_agent.llm.errors import describe_model_error, response_text
 from retail_agent.observability.tracing import trace_generation
 
@@ -59,7 +60,11 @@ class GeminiClient:
         return cls(api_key, model or settings.gemini_model, fallback_model=settings.gemini_fallback_model)
 
     def generate_structured(
-        self, prompt: str, response_schema: type[T], *, system_instruction: str | None = None,
+        self,
+        prompt: str,
+        response_schema: type[T],
+        *,
+        system_instruction: str | None = None,
     ) -> T:
         self.last_usage = {}
         model, attempts_on_model, attempt = self.model, 1, 1
@@ -72,11 +77,17 @@ class GeminiClient:
                 if next_model is None:
                     raise
                 delay = self._delay(attempts_on_model, metadata) if next_model == model else 0.0
-                logger.warning("model_retry", extra={
-                    "error_code": code, "attempt": attempt, "delay_ms": round(delay * 1000),
-                    "fallback": next_model != model, "model": next_model,
-                    **{key: metadata[key] for key in ("error_type", "http_status") if key in metadata},
-                })
+                logger.warning(
+                    "model_retry",
+                    extra={
+                        "error_code": code,
+                        "attempt": attempt,
+                        "delay_ms": round(delay * 1000),
+                        "fallback": next_model != model,
+                        "model": next_model,
+                        **{key: metadata[key] for key in ("error_type", "http_status") if key in metadata},
+                    },
+                )
                 if delay:
                     self._sleep(delay)
                 attempts_on_model = attempts_on_model + 1 if next_model == model else 1
@@ -87,9 +98,12 @@ class GeminiClient:
         if model != self.model:
             return None  # The fallback model gets exactly one attempt.
         retry_after = metadata.get("retry_after_seconds")
-        if (code in _RETRY_SAME_MODEL and attempts_on_model < self.max_attempts
-                # A long Retry-After means waiting is worse than trying the fallback.
-                and (retry_after is None or retry_after <= self.max_delay_seconds)):
+        if (
+            code in _RETRY_SAME_MODEL
+            and attempts_on_model < self.max_attempts
+            # A long Retry-After means waiting is worse than trying the fallback.
+            and (retry_after is None or retry_after <= self.max_delay_seconds)
+        ):
             return model
         if self.fallback_model and code in _TRY_FALLBACK:
             return self.fallback_model
@@ -128,11 +142,14 @@ class GeminiClient:
                 }
             action = response_schema.model_validate_json(response_text(response))
             if observation is not None:
-                observation.update(output=action.model_dump(mode="json"), usage_details={
-                    "input": self.last_usage.get("input_tokens", 0),
-                    "output": self.last_usage.get("output_tokens", 0),
-                    "total": self.last_usage.get("total_tokens", 0),
-                })
+                observation.update(
+                    output=action.model_dump(mode="json"),
+                    usage_details={
+                        "input": self.last_usage.get("input_tokens", 0),
+                        "output": self.last_usage.get("output_tokens", 0),
+                        "total": self.last_usage.get("total_tokens", 0),
+                    },
+                )
             return action
 
     def close(self) -> None:

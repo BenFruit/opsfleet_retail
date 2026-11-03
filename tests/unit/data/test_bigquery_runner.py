@@ -23,17 +23,25 @@ class BigQueryRunnerTests(unittest.TestCase):
 
     def execute(self, **overrides):
         args = dict(
-            allowed_brands=("Brand A", "Brand B"), maximum_bytes_billed=1000,
-            max_rows=2, timeout_seconds=3, api_timeout_seconds=1,
+            allowed_brands=("Brand A", "Brand B"),
+            maximum_bytes_billed=1000,
+            max_rows=2,
+            timeout_seconds=3,
+            api_timeout_seconds=1,
             query_id="test123",
         )
         args.update(overrides)
         return self.runner.execute_scoped_query("SCOPED SQL", **args)
 
     def test_dry_run_parameters_and_no_execution(self):
-        self.assertEqual(self.runner.dry_run(
-            "SCOPED SQL", allowed_brands=("Brand A",), api_timeout_seconds=1,
-        ), 50)
+        self.assertEqual(
+            self.runner.dry_run(
+                "SCOPED SQL",
+                allowed_brands=("Brand A",),
+                api_timeout_seconds=1,
+            ),
+            50,
+        )
         kwargs = self.runner.client.query.call_args.kwargs
         config = kwargs["job_config"]
         self.assertTrue(config.dry_run)
@@ -60,7 +68,11 @@ class BigQueryRunnerTests(unittest.TestCase):
         self.assertIsNone(kwargs["retry"])
         self.assertIsNone(kwargs["job_retry"])
         self.job.result.assert_called_once_with(
-            timeout=3, max_results=3, page_size=3, retry=None, job_retry=None,
+            timeout=3,
+            max_results=3,
+            page_size=3,
+            retry=None,
+            job_retry=None,
         )
         self.assertEqual(result.rows, ({"id": 1},))
         self.assertFalse(result.truncated)

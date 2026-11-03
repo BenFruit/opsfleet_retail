@@ -4,11 +4,16 @@ from unittest.mock import Mock
 
 from retail_agent.data.query_service import QueryResult, QueryServiceError
 from retail_agent.evaluation.answers import (
-    DEFAULT_CASES, PARTIAL_MARKER, AnswerCase, JudgeVerdict, RecordingQueryService, check_case, summarize,
+    DEFAULT_CASES,
+    PARTIAL_MARKER,
+    AnswerCase,
+    JudgeVerdict,
+    RecordingQueryService,
+    check_case,
+    summarize,
 )
 from retail_agent.sql.scope import apply_brand_scope
 from support.paths import REPO_ROOT
-
 
 ALLOWED = {"Brand A", "Brand B"}
 
@@ -27,7 +32,9 @@ def failed(results):
 
 class AnswerCaseFileTests(unittest.TestCase):
     def test_cases_cover_categories_and_reference_sql_passes_policy(self):
-        cases = [AnswerCase.model_validate(c) for c in json.loads((REPO_ROOT / DEFAULT_CASES).read_text(encoding="utf-8"))]
+        cases = [
+            AnswerCase.model_validate(c) for c in json.loads((REPO_ROOT / DEFAULT_CASES).read_text(encoding="utf-8"))
+        ]
         self.assertEqual({c.category for c in cases}, {"analytics", "report", "safety", "ux"})
         self.assertEqual(len({c.id for c in cases}), len(cases))
         for c in cases:
@@ -50,14 +57,23 @@ class DeterministicCheckTests(unittest.TestCase):
 
     def test_query_expectations_use_successful_calls_only(self):
         c = case(expect_query=True, sql_must_match=[r"status = 'Complete'"])
-        error = {"sql": "SELECT status = 'Complete'", "status": "error", "code": "invalid_sql", "rows": [], "columns": []}
-        self.assertEqual(set(failed(check_case(c, "a", [error], {}, ALLOWED))),
-                         {"query_ran", "sql_matches:status = 'Complete'"})
+        error = {
+            "sql": "SELECT status = 'Complete'",
+            "status": "error",
+            "code": "invalid_sql",
+            "rows": [],
+            "columns": [],
+        }
+        self.assertEqual(
+            set(failed(check_case(c, "a", [error], {}, ALLOWED))), {"query_ran", "sql_matches:status = 'Complete'"}
+        )
         self.assertEqual(failed(check_case(case(expect_query=False), "a", [], {}, ALLOWED)), [])
 
     def test_forbidden_sql_counts_attempts_too(self):
         attempt = {"sql": "SELECT u.email", "status": "error", "code": "invalid_sql", "rows": [], "columns": []}
-        self.assertIn("sql_avoids:email", failed(check_case(case(sql_must_not_match=["email"]), "a", [attempt], {}, ALLOWED)))
+        self.assertIn(
+            "sql_avoids:email", failed(check_case(case(sql_must_not_match=["email"]), "a", [attempt], {}, ALLOWED))
+        )
 
     def test_brand_access_table_and_partial_answers(self):
         c = case(brands_within_access=True, answer_has_table=True)
@@ -99,10 +115,24 @@ class RecorderAndSummaryTests(unittest.TestCase):
         verdict = JudgeVerdict(intent_coverage=4, faithfulness=3, caveats=5, actionability=5, rationale="r")
         self.assertFalse(verdict.passed)
         records = [
-            {"category": "analytics", "deterministic_passed": True, "judge": {**verdict.model_dump(), "passed": False},
-             "seconds": 4.0, "answer": "ok", "model_calls": 2, "queries": 1},
-            {"category": "safety", "deterministic_passed": False, "judge": None,
-             "seconds": 2.0, "answer": PARTIAL_MARKER, "model_calls": 1, "queries": 0},
+            {
+                "category": "analytics",
+                "deterministic_passed": True,
+                "judge": {**verdict.model_dump(), "passed": False},
+                "seconds": 4.0,
+                "answer": "ok",
+                "model_calls": 2,
+                "queries": 1,
+            },
+            {
+                "category": "safety",
+                "deterministic_passed": False,
+                "judge": None,
+                "seconds": 2.0,
+                "answer": PARTIAL_MARKER,
+                "model_calls": 1,
+                "queries": 0,
+            },
         ]
         summary = summarize(records)
         self.assertEqual(summary["deterministic_pass_rate"], 0.5)

@@ -5,9 +5,8 @@ import unittest
 
 from sqlglot import exp, parse_one
 
-from retail_agent.sql.validator import validate_query
 from retail_agent.sql.scope import apply_brand_scope
-
+from retail_agent.sql.validator import validate_query
 
 DATASET = "bigquery-public-data.thelook_ecommerce"
 
@@ -18,14 +17,14 @@ class QueryScopeTests(unittest.TestCase):
         self.addCleanup(self.db.close)
         # Include every projected field, without introducing pandas/BQ dependencies.
         from retail_agent.schema.catalog import TABLE_POLICIES
+
         for table, columns in TABLE_POLICIES.items():
             fields = ", ".join(f'"{name}"' for name in columns)
             self.db.execute(f'CREATE TABLE "{table}" ({fields})')
 
         self.db.executemany(
             "INSERT INTO products (id, name, brand, cost) VALUES (?, ?, ?, ?)",
-            [(1, "A product", "Brand A", 3), (2, "B product", "Brand B", 4),
-             (3, "C product", "Brand C", 5)],
+            [(1, "A product", "Brand A", 3), (2, "B product", "Brand B", 4), (3, "C product", "Brand C", 5)],
         )
         self.db.executemany("INSERT INTO users (id) VALUES (?)", [(10,), (20,), (30,)])
         self.db.executemany(
@@ -34,8 +33,7 @@ class QueryScopeTests(unittest.TestCase):
         )
         self.db.executemany(
             "INSERT INTO order_items (id, order_id, user_id, product_id, sale_price) VALUES (?, ?, ?, ?, ?)",
-            [(1, 100, 10, 1, 10), (2, 100, 10, 2, 20),
-             (3, 100, 10, 3, 900), (4, 200, 20, 3, 100)],
+            [(1, 100, 10, 1, 10), (2, 100, 10, 2, 20), (3, 100, 10, 3, 900), (4, 200, 20, 3, 100)],
         )
 
     def execute_scoped(self, sql, brands=("Brand A", "Brand B")):
@@ -47,24 +45,22 @@ class QueryScopeTests(unittest.TestCase):
         tree = parse_one(apply_brand_scope(sql), read="bigquery")
         for predicate in list(tree.find_all(exp.In)):
             if predicate.args.get("unnest") is not None:
-                predicate.replace(exp.In(
-                    this=predicate.this.copy(),
-                    expressions=[exp.Literal.string(brand) for brand in brands],
-                ))
+                predicate.replace(
+                    exp.In(
+                        this=predicate.this.copy(),
+                        expressions=[exp.Literal.string(brand) for brand in brands],
+                    )
+                )
         for table in tree.find_all(exp.Table):
             table.set("catalog", None)
             table.set("db", None)
         return self.db.execute(tree.sql(dialect="sqlite")).fetchall()
 
     def test_products(self):
-        self.assertEqual(self.execute_scoped(
-            f"SELECT p.id FROM `{DATASET}.products` AS p ORDER BY p.id"
-        ), [(1,), (2,)])
+        self.assertEqual(self.execute_scoped(f"SELECT p.id FROM `{DATASET}.products` AS p ORDER BY p.id"), [(1,), (2,)])
 
     def test_unqualified_column_is_allowed_when_unambiguous(self):
-        self.assertEqual(self.execute_scoped(
-            f"SELECT id FROM `{DATASET}.products` ORDER BY id"
-        ), [(1,), (2,)])
+        self.assertEqual(self.execute_scoped(f"SELECT id FROM `{DATASET}.products` ORDER BY id"), [(1,), (2,)])
 
     def test_cte_and_derived_sources_are_supported_and_scoped(self):
         for sql in (
@@ -75,19 +71,28 @@ class QueryScopeTests(unittest.TestCase):
                 self.assertEqual(self.execute_scoped(sql), [(1,), (2,)])
 
     def test_cte_shadowing_a_physical_table_name_is_not_mistaken_for_that_table(self):
-        self.assertEqual(self.execute_scoped(
-            f"WITH users AS (SELECT p.id FROM `{DATASET}.products` p) SELECT users.id FROM users ORDER BY users.id"
-        ), [(1,), (2,)])
+        self.assertEqual(
+            self.execute_scoped(
+                f"WITH users AS (SELECT p.id FROM `{DATASET}.products` p) SELECT users.id FROM users ORDER BY users.id"
+            ),
+            [(1,), (2,)],
+        )
 
     def test_window_function_only_sees_authorized_rows(self):
-        self.assertEqual(self.execute_scoped(
-            f"SELECT p.id, SUM(p.cost) OVER (ORDER BY p.id) AS running_cost FROM `{DATASET}.products` p ORDER BY p.id"
-        ), [(1, 3), (2, 7)])
+        self.assertEqual(
+            self.execute_scoped(
+                f"SELECT p.id, SUM(p.cost) OVER (ORDER BY p.id) AS running_cost FROM `{DATASET}.products` p ORDER BY p.id"
+            ),
+            [(1, 3), (2, 7)],
+        )
 
     def test_correlated_reference_is_supported(self):
-        self.assertEqual(self.execute_scoped(f"""SELECT p.id FROM `{DATASET}.products` p
+        self.assertEqual(
+            self.execute_scoped(f"""SELECT p.id FROM `{DATASET}.products` p
             WHERE EXISTS (SELECT 1 FROM `{DATASET}.order_items` oi WHERE oi.product_id=p.id)
-            ORDER BY p.id"""), [(1,), (2,)])
+            ORDER BY p.id"""),
+            [(1,), (2,)],
+        )
 
     def test_union_sources_are_independently_scoped(self):
         rows = self.execute_scoped(f"""SELECT p.id FROM `{DATASET}.products` p
@@ -95,55 +100,64 @@ class QueryScopeTests(unittest.TestCase):
         self.assertEqual(sorted(rows), [(1,), (2,)])
 
     def test_builtin_functions_do_not_need_a_handwritten_allowlist(self):
-        self.assertEqual(self.execute_scoped(
-            f"SELECT p.id, ROUND(p.cost, 2) AS rounded FROM `{DATASET}.products` p ORDER BY p.id"
-        ), [(1, 3.0), (2, 4.0)])
+        self.assertEqual(
+            self.execute_scoped(f"SELECT p.id, ROUND(p.cost, 2) AS rounded FROM `{DATASET}.products` p ORDER BY p.id"),
+            [(1, 3.0), (2, 4.0)],
+        )
 
     def test_unqualified_grouping_dimension_resolves_to_its_real_table(self):
-        self.assertEqual(self.execute_scoped(f"""
+        self.assertEqual(
+            self.execute_scoped(f"""
             SELECT p.brand, SUM(oi.sale_price) AS revenue,
                    SUM(oi.sale_price - p.cost) AS profit
             FROM `{DATASET}.products` AS p
             JOIN `{DATASET}.order_items` AS oi ON oi.product_id = p.id
             GROUP BY brand ORDER BY profit DESC LIMIT 10
-        """), [("Brand B", 20, 16), ("Brand A", 10, 7)])
+        """),
+            [("Brand B", 20, 16), ("Brand A", 10, 7)],
+        )
 
     def test_order_items_without_product_join(self):
-        self.assertEqual(self.execute_scoped(
-            f"SELECT SUM(oi.sale_price) FROM `{DATASET}.order_items` AS oi"
-        ), [(30,)])
+        self.assertEqual(self.execute_scoped(f"SELECT SUM(oi.sale_price) FROM `{DATASET}.order_items` AS oi"), [(30,)])
 
     def test_customers_are_not_duplicated_by_purchases(self):
-        self.assertEqual(self.execute_scoped(
-            f"SELECT u.id FROM `{DATASET}.users` AS u"
-        ), [(10,)])
+        self.assertEqual(self.execute_scoped(f"SELECT u.id FROM `{DATASET}.users` AS u"), [(10,)])
 
     def test_orders_are_not_duplicated_by_items(self):
-        self.assertEqual(self.execute_scoped(
-            f"SELECT o.order_id FROM `{DATASET}.orders` AS o"
-        ), [(100,)])
+        self.assertEqual(self.execute_scoped(f"SELECT o.order_id FROM `{DATASET}.orders` AS o"), [(100,)])
 
     def test_customer_join_does_not_unlock_other_brand_purchases(self):
-        self.assertEqual(self.execute_scoped(f"""
+        self.assertEqual(
+            self.execute_scoped(f"""
             SELECT u.id, SUM(oi.sale_price)
             FROM `{DATASET}.users` AS u
             JOIN `{DATASET}.order_items` AS oi ON oi.user_id = u.id
             GROUP BY u.id
-        """), [(10, 30)])
+        """),
+            [(10, 30)],
+        )
 
     def test_other_manager_sees_only_other_brands(self):
-        self.assertEqual(self.execute_scoped(
-            f"SELECT SUM(oi.sale_price) FROM `{DATASET}.order_items` AS oi",
-            brands=("Brand C",),
-        ), [(1000,)])
+        self.assertEqual(
+            self.execute_scoped(
+                f"SELECT SUM(oi.sale_price) FROM `{DATASET}.order_items` AS oi",
+                brands=("Brand C",),
+            ),
+            [(1000,)],
+        )
 
     def test_empty_brands_do_not_grant_all_rows(self):
-        self.assertEqual(self.execute_scoped(
-            f"SELECT p.id FROM `{DATASET}.products` AS p", brands=(),
-        ), [])
+        self.assertEqual(
+            self.execute_scoped(
+                f"SELECT p.id FROM `{DATASET}.products` AS p",
+                brands=(),
+            ),
+            [],
+        )
 
     def test_model_schema_names_only_plannable_columns(self):
         from unittest.mock import Mock
+
         from retail_agent.llm.analyst import Analyst
 
         schema = {
@@ -151,21 +165,25 @@ class QueryScopeTests(unittest.TestCase):
             "users": [{"name": "email", "type": "STRING"}, {"name": "age", "type": "INT64"}],
         }
         visible = Analyst(Mock(), schema, persona_style=Mock()).schema
-        self.assertEqual({t: [c["name"] for c in cols] for t, cols in visible.items()},
-                         {"orders": ["order_id"], "users": ["age"]})
+        self.assertEqual(
+            {t: [c["name"] for c in cols] for t, cols in visible.items()}, {"orders": ["order_id"], "users": ["age"]}
+        )
 
     def test_aliasless_table_reference(self):
-        self.assertEqual(self.execute_scoped(
-            f"SELECT products.id FROM `{DATASET}.products` ORDER BY products.id"
-        ), [(1,), (2,)])
+        self.assertEqual(
+            self.execute_scoped(f"SELECT products.id FROM `{DATASET}.products` ORDER BY products.id"), [(1,), (2,)]
+        )
 
     def test_reused_aliases_in_nested_scopes(self):
-        self.assertEqual(self.execute_scoped(f"""
+        self.assertEqual(
+            self.execute_scoped(f"""
             SELECT x.cost FROM `{DATASET}.products` AS x
             WHERE x.id IN (
                 SELECT x.product_id FROM `{DATASET}.order_items` AS x
             ) ORDER BY x.cost
-        """), [(3,), (4,)])
+        """),
+            [(3,), (4,)],
+        )
 
     def test_all_original_table_occurrences_are_scoped(self):
         sql = f"""SELECT p.id FROM `{DATASET}.products` AS p
@@ -180,9 +198,7 @@ class QueryScopeTests(unittest.TestCase):
         self.assertNotIn("Brand A", result)
 
     def test_blocked_columns_are_not_projected_by_generated_sources(self):
-        result = parse_one(apply_brand_scope(
-            f"SELECT u.id FROM `{DATASET}.users` AS u"
-        ), read="bigquery")
+        result = parse_one(apply_brand_scope(f"SELECT u.id FROM `{DATASET}.users` AS u"), read="bigquery")
         self.assertNotIn("email", {column.name for column in result.find_all(exp.Column)})
         self.assertNotIn("first_name", {column.name for column in result.find_all(exp.Column)})
 

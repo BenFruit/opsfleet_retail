@@ -1,30 +1,21 @@
 from .models import ColumnPolicy, DataAccessLevel
 
-
 USER_COLUMN_POLICIES = {
     "id": ColumnPolicy(access_level=DataAccessLevel.ALLOWED),
-
     "first_name": ColumnPolicy(access_level=DataAccessLevel.BLOCKED_PII),
     "last_name": ColumnPolicy(access_level=DataAccessLevel.BLOCKED_PII),
     "email": ColumnPolicy(access_level=DataAccessLevel.BLOCKED_PII),
-
     "age": ColumnPolicy(access_level=DataAccessLevel.AGGREGATE_ONLY),
     "gender": ColumnPolicy(access_level=DataAccessLevel.AGGREGATE_ONLY),
     "state": ColumnPolicy(access_level=DataAccessLevel.AGGREGATE_ONLY),
-
     "street_address": ColumnPolicy(access_level=DataAccessLevel.BLOCKED_PII),
     "postal_code": ColumnPolicy(access_level=DataAccessLevel.BLOCKED_PII),
-
     "city": ColumnPolicy(access_level=DataAccessLevel.AGGREGATE_ONLY),
     "country": ColumnPolicy(access_level=DataAccessLevel.AGGREGATE_ONLY),
-
     "latitude": ColumnPolicy(access_level=DataAccessLevel.BLOCKED_PII),
     "longitude": ColumnPolicy(access_level=DataAccessLevel.BLOCKED_PII),
-
     "traffic_source": ColumnPolicy(access_level=DataAccessLevel.AGGREGATE_ONLY),
-
     "created_at": ColumnPolicy(access_level=DataAccessLevel.ALLOWED),
-
     "user_geom": ColumnPolicy(access_level=DataAccessLevel.BLOCKED_PII),
 }
 
@@ -32,16 +23,12 @@ USER_COLUMN_POLICIES = {
 ORDERS_COLUMN_POLICIES = {
     "order_id": ColumnPolicy(access_level=DataAccessLevel.ALLOWED),
     "user_id": ColumnPolicy(access_level=DataAccessLevel.ALLOWED),
-
     "status": ColumnPolicy(access_level=DataAccessLevel.ALLOWED),
-
     "gender": ColumnPolicy(access_level=DataAccessLevel.AGGREGATE_ONLY),
-
     "created_at": ColumnPolicy(access_level=DataAccessLevel.ALLOWED),
     "returned_at": ColumnPolicy(access_level=DataAccessLevel.ALLOWED),
     "shipped_at": ColumnPolicy(access_level=DataAccessLevel.ALLOWED),
     "delivered_at": ColumnPolicy(access_level=DataAccessLevel.ALLOWED),
-
     "num_of_item": ColumnPolicy(
         access_level=DataAccessLevel.BLOCKED_UNSCOPED,
         description="Count authorized order_items instead of whole-order num_of_item",
@@ -55,14 +42,11 @@ ORDER_ITEMS_COLUMN_POLICIES = {
     "user_id": ColumnPolicy(access_level=DataAccessLevel.ALLOWED),
     "product_id": ColumnPolicy(access_level=DataAccessLevel.ALLOWED),
     "inventory_item_id": ColumnPolicy(access_level=DataAccessLevel.ALLOWED),
-
     "status": ColumnPolicy(access_level=DataAccessLevel.ALLOWED),
-
     "created_at": ColumnPolicy(access_level=DataAccessLevel.ALLOWED),
     "shipped_at": ColumnPolicy(access_level=DataAccessLevel.ALLOWED),
     "delivered_at": ColumnPolicy(access_level=DataAccessLevel.ALLOWED),
     "returned_at": ColumnPolicy(access_level=DataAccessLevel.ALLOWED),
-
     "sale_price": ColumnPolicy(access_level=DataAccessLevel.ALLOWED),
 }
 
@@ -76,9 +60,7 @@ PRODUCTS_COLUMN_POLICIES = {
     "retail_price": ColumnPolicy(access_level=DataAccessLevel.ALLOWED),
     "department": ColumnPolicy(access_level=DataAccessLevel.ALLOWED),
     "sku": ColumnPolicy(access_level=DataAccessLevel.ALLOWED),
-    "distribution_center_id": ColumnPolicy(
-        access_level=DataAccessLevel.ALLOWED
-    ),
+    "distribution_center_id": ColumnPolicy(access_level=DataAccessLevel.ALLOWED),
 }
 
 

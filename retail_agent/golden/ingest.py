@@ -17,12 +17,11 @@ from pydantic import ValidationError
 
 from retail_agent.golden.models import GoldenError, GoldenTrio
 from retail_agent.llm.embeddings import EmbeddingError
-from retail_agent.storage.postgres import StorageError
 from retail_agent.safety.errors import ResultGuardError
 from retail_agent.safety.sensitive_text import check_text
-from retail_agent.sql.validator import SQLValidationError
 from retail_agent.sql.scope import apply_brand_scope
-
+from retail_agent.sql.validator import SQLValidationError
+from retail_agent.storage.postgres import StorageError
 
 DEFAULT_BUCKET = Path("golden/trios")
 
@@ -82,8 +81,13 @@ def plan_ingest(trios: list[GoldenTrio], indexed: dict[str, tuple[str, str]], mo
 def ingest(trios: list[GoldenTrio], repository, embedder) -> IngestPlan:
     plan = plan_ingest(trios, repository.indexed_hashes(), embedder.model)
     # Embed everything BEFORE the write transaction so a provider outage publishes nothing.
-    upserts = [(trio, embedder.embed(trio.search_text(), document=True, title=trio.question,
-                                     observation_name="golden_embedding")) for trio in plan.upserts]
+    upserts = [
+        (
+            trio,
+            embedder.embed(trio.search_text(), document=True, title=trio.question, observation_name="golden_embedding"),
+        )
+        for trio in plan.upserts
+    ]
     if upserts or plan.remove:
         repository.publish(upserts=upserts, remove=plan.remove, model=embedder.model)
     return plan

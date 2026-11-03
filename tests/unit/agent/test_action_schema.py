@@ -6,7 +6,6 @@ from retail_agent.agent.models import AgentAction
 from retail_agent.reports.models import DeleteScope, ReportOperation, ReportRequest
 from support.paths import REPO_ROOT
 
-
 SNAPSHOT = REPO_ROOT / "tests/support/agent_action_schema.json"
 
 

@@ -22,7 +22,7 @@ import json
 import math
 import re
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Literal
@@ -31,7 +31,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from retail_agent.data.query_service import QueryServiceError
 from retail_agent.safety.grounding import ungrounded_figures
-
 
 DEFAULT_CASES = Path("evals/answer_cases.json")
 PARTIAL_MARKER = "I could not fully complete the analysis"
@@ -100,8 +99,14 @@ class RecordingQueryService:
         except QueryServiceError as error:
             self.calls.append({"sql": sql, "status": "error", "code": error.code, "rows": [], "columns": []})
             raise
-        self.calls.append({"sql": sql, "status": "ok", "columns": list(result.columns),
-                           "rows": [{k: _plain(v) for k, v in row.items()} for row in result.rows]})
+        self.calls.append(
+            {
+                "sql": sql,
+                "status": "ok",
+                "columns": list(result.columns),
+                "rows": [{k: _plain(v) for k, v in row.items()} for row in result.rows],
+            }
+        )
         return result
 
 
@@ -124,7 +129,9 @@ def _number(value) -> float | None:
         return None
 
 
-def check_case(case: AnswerCase, answer: str, calls: list[dict], references: dict, allowed_brands: set[str]) -> list[dict]:
+def check_case(
+    case: AnswerCase, answer: str, calls: list[dict], references: dict, allowed_brands: set[str]
+) -> list[dict]:
     """Pure deterministic checks; returns [{name, passed, detail}]."""
     results = []
 
@@ -134,8 +141,11 @@ def check_case(case: AnswerCase, answer: str, calls: list[dict], references: dic
     ok_calls = [call for call in calls if call["status"] == "ok"]
     all_sql = "\n".join(call["sql"] for call in calls)
     if case.expect_query is not None:
-        add("query_ran" if case.expect_query else "no_query", bool(ok_calls) == case.expect_query,
-            f"{len(ok_calls)} successful of {len(calls)} attempts")
+        add(
+            "query_ran" if case.expect_query else "no_query",
+            bool(ok_calls) == case.expect_query,
+            f"{len(ok_calls)} successful of {len(calls)} attempts",
+        )
     for pattern in case.sql_must_match:
         add(f"sql_matches:{pattern}", any(re.search(pattern, call["sql"]) for call in ok_calls))
     for pattern in case.sql_must_not_match:
@@ -157,8 +167,10 @@ def check_case(case: AnswerCase, answer: str, calls: list[dict], references: dic
             add(f"reference:{ref.name}", False, "reference query returned nothing")
         elif ref.kind == "number":
             target = _number(expected)
-            found = any((v := _number(c)) is not None and abs(v - target) <= ref.tolerance * max(1.0, abs(target))
-                        for c in cells)
+            found = any(
+                (v := _number(c)) is not None and abs(v - target) <= ref.tolerance * max(1.0, abs(target))
+                for c in cells
+            )
             add(f"reference:{ref.name}", found, f"expected {target}")
         else:
             text = str(expected)
@@ -187,8 +199,16 @@ high intent_coverage. Follow the case focus. Rationale: two or three sentences."
 
 def judge(llm, case: AnswerCase, answer: str, calls: list[dict]) -> JudgeVerdict:
     evidence = [{"sql": call["sql"][:1500], "status": call["status"], "rows": call["rows"][:20]} for call in calls]
-    prompt = json.dumps({"question": case.question, "case_focus": case.judge_focus, "answer": answer[:8000],
-                         "checked_results": evidence}, ensure_ascii=False, default=str)
+    prompt = json.dumps(
+        {
+            "question": case.question,
+            "case_focus": case.judge_focus,
+            "answer": answer[:8000],
+            "checked_results": evidence,
+        },
+        ensure_ascii=False,
+        default=str,
+    )
     return llm.generate_structured(prompt, JudgeVerdict, system_instruction=JUDGE_INSTRUCTION)
 
 
@@ -202,11 +222,17 @@ def summarize(records: list[dict]) -> dict:
     latencies = sorted(r["seconds"] for r in records)
     return {
         "cases": len(records),
-        "deterministic_pass_rate": round(sum(r["deterministic_passed"] for r in records) / len(records), 3) if records else 0,
+        "deterministic_pass_rate": round(sum(r["deterministic_passed"] for r in records) / len(records), 3)
+        if records
+        else 0,
         "by_category": by_category,
         "judge_pass_rate": round(sum(j["passed"] for j in judged) / len(judged), 3) if judged else None,
-        "judge_means": {key: round(sum(j[key] for j in judged) / len(judged), 2)
-                        for key in ("intent_coverage", "faithfulness", "caveats", "actionability")} if judged else None,
+        "judge_means": {
+            key: round(sum(j[key] for j in judged) / len(judged), 2)
+            for key in ("intent_coverage", "faithfulness", "caveats", "actionability")
+        }
+        if judged
+        else None,
         "partial_answers": sum(PARTIAL_MARKER in r["answer"] for r in records),
         "latency_seconds": {"p50": latencies[len(latencies) // 2], "max": latencies[-1]} if latencies else None,
         "model_calls_total": sum(r["model_calls"] for r in records),
@@ -261,9 +287,17 @@ def main(argv=None) -> int:
             recorder = RecordingQueryService(query_service)
             # Same wiring as the chat, minus user memory (reproducibility).
             agent = build_agent(
-                llm, schema, recorder, manager_id=args.manager, entitlements=entitlements,
-                connect=connect, embedder=embedder, golden=not args.no_golden, memory=False,
-                persona_doc_id="", golden_min_similarity=settings.golden_min_similarity,
+                llm,
+                schema,
+                recorder,
+                manager_id=args.manager,
+                entitlements=entitlements,
+                connect=connect,
+                embedder=embedder,
+                golden=not args.no_golden,
+                memory=False,
+                persona_doc_id="",
+                golden_min_similarity=settings.golden_min_similarity,
             )
             started = time.monotonic()
             turn = agent.ask(case.question)
@@ -284,15 +318,31 @@ def main(argv=None) -> int:
                 except Exception as error:  # Judge failure must not hide the deterministic result.
                     print(f"  judge failed for {case.id}: {type(error).__name__}")
             failed = [c["name"] for c in checks if not c["passed"]]
-            records.append({
-                "id": case.id, "category": case.category, "question": case.question,
-                "deterministic_passed": not failed, "failed_checks": failed, "checks": checks,
-                "judge": {**verdict.model_dump(), "passed": verdict.passed} if verdict else None,
-                "seconds": seconds, "queries": turn.queries, "model_calls": turn.model_calls,
-                "answer": turn.answer, "calls": recorder.calls, "references": references,
-            })
-            scores = f"judge {verdict.intent_coverage}/{verdict.faithfulness}/{verdict.caveats}/{verdict.actionability}" if verdict else ""
-            print(f"{'PASS' if not failed else 'FAIL'} {case.id:<28} {seconds:>5}s q={turn.queries} m={turn.model_calls} {scores} {failed or ''}")
+            records.append(
+                {
+                    "id": case.id,
+                    "category": case.category,
+                    "question": case.question,
+                    "deterministic_passed": not failed,
+                    "failed_checks": failed,
+                    "checks": checks,
+                    "judge": {**verdict.model_dump(), "passed": verdict.passed} if verdict else None,
+                    "seconds": seconds,
+                    "queries": turn.queries,
+                    "model_calls": turn.model_calls,
+                    "answer": turn.answer,
+                    "calls": recorder.calls,
+                    "references": references,
+                }
+            )
+            scores = (
+                f"judge {verdict.intent_coverage}/{verdict.faithfulness}/{verdict.caveats}/{verdict.actionability}"
+                if verdict
+                else ""
+            )
+            print(
+                f"{'PASS' if not failed else 'FAIL'} {case.id:<28} {seconds:>5}s q={turn.queries} m={turn.model_calls} {scores} {failed or ''}"
+            )
             time.sleep(args.pause)
     finally:
         shutdown_tracing()
@@ -304,10 +354,12 @@ def main(argv=None) -> int:
     summary = summarize(records)
     out_dir = Path("logs/eval")
     out_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     path = out_dir / f"answers-{mode}-{stamp}.json"
-    path.write_text(json.dumps({"mode": mode, "summary": summary, "records": records}, indent=2,
-                               ensure_ascii=False, default=str), encoding="utf-8")
+    path.write_text(
+        json.dumps({"mode": mode, "summary": summary, "records": records}, indent=2, ensure_ascii=False, default=str),
+        encoding="utf-8",
+    )
     print("\nSummary:", json.dumps(summary, ensure_ascii=False))
     print("Details:", path)
     return 0

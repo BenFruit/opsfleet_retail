@@ -219,6 +219,7 @@ All limits (model calls, SQL attempts, bytes, rows, timeouts) are listed in the
 ```powershell
 uv run python -B -m pytest                                 # offline, no credentials
 uv run python -B -m pytest tests/unit                      # one layer (unit, integration)
+uv run ruff check . ; uv run ruff format --check .         # lint and formatting
 
 $env:RETAIL_TEST_POSTGRES='1'                               # + real PostgreSQL/pgvector
 uv run python -B -m pytest

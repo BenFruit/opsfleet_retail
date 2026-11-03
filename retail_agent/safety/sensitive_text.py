@@ -8,7 +8,6 @@ import re
 
 from retail_agent.safety.errors import ResultGuardError
 
-
 _EMAIL = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
 _PHONE_CANDIDATE = re.compile(r"(?<!\w)\+\d[\d ()-]{6,}\d(?!\w)")
 # Analytical prose such as "+12 (2023-09-01 - 2023-09-30)" or "+3 (2024 - 2023)"

@@ -9,21 +9,53 @@ class BootstrapTests(unittest.TestCase):
         from retail_agent.bootstrap import build_agent
 
         connect, embedder = Mock(), Mock()
-        full = build_agent(Mock(), {}, Mock(), manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS,
-                           connect=connect, embedder=embedder, golden=True, memory=True,
-                           persona_doc_id="doc", golden_min_similarity=0.7)
+        full = build_agent(
+            Mock(),
+            {},
+            Mock(),
+            manager_id="manager_a",
+            entitlements=DEMO_ENTITLEMENTS,
+            connect=connect,
+            embedder=embedder,
+            golden=True,
+            memory=True,
+            persona_doc_id="doc",
+            golden_min_similarity=0.7,
+        )
         self.assertIs(full.reports.repository._connect, connect)
         self.assertIs(full.memory.embedder, embedder)
         self.assertIs(full.golden.repository.connection, connect)
         self.assertEqual(full.golden.min_similarity, 0.7)
         self.assertEqual(full.analyst.persona_style.reader.document, "doc")
-        self.assertIsNone(build_agent(Mock(), {}, Mock(), manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS,
-                                      connect=connect, embedder=embedder, golden=False, memory=False, persona_doc_id="",
-                                      golden_min_similarity=0.65).analyst.persona_style.reader)
+        self.assertIsNone(
+            build_agent(
+                Mock(),
+                {},
+                Mock(),
+                manager_id="manager_a",
+                entitlements=DEMO_ENTITLEMENTS,
+                connect=connect,
+                embedder=embedder,
+                golden=False,
+                memory=False,
+                persona_doc_id="",
+                golden_min_similarity=0.65,
+            ).analyst.persona_style.reader
+        )
         self.assertEqual(full.allowed_brands, ["Brand A", "Brand B"])
-        bare = build_agent(Mock(), {}, Mock(), manager_id="manager_b", entitlements=DEMO_ENTITLEMENTS,
-                           connect=connect, embedder=embedder, golden=False, memory=False,
-                           persona_doc_id="", golden_min_similarity=0.65)
+        bare = build_agent(
+            Mock(),
+            {},
+            Mock(),
+            manager_id="manager_b",
+            entitlements=DEMO_ENTITLEMENTS,
+            connect=connect,
+            embedder=embedder,
+            golden=False,
+            memory=False,
+            persona_doc_id="",
+            golden_min_similarity=0.65,
+        )
         self.assertIsNone(bare.golden)
         self.assertIsNone(bare.memory)
         self.assertIsNotNone(bare.reports)

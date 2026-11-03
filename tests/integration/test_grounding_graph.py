@@ -8,13 +8,17 @@ from retail_agent.data.query_service import QueryLimits, QueryResult, QueryServi
 from retail_agent.llm.analyst import Analyst
 from support.demo_access import DEMO_ENTITLEMENTS, patch_agent_loggers
 
-
-SQL = ("SELECT p.category AS category, SUM(oi.sale_price) AS revenue FROM "
-       "`bigquery-public-data.thelook_ecommerce.order_items` AS oi JOIN "
-       "`bigquery-public-data.thelook_ecommerce.products` AS p ON oi.product_id = p.id GROUP BY category")
+SQL = (
+    "SELECT p.category AS category, SUM(oi.sale_price) AS revenue FROM "
+    "`bigquery-public-data.thelook_ecommerce.order_items` AS oi JOIN "
+    "`bigquery-public-data.thelook_ecommerce.products` AS p ON oi.product_id = p.id GROUP BY category"
+)
 TOTAL_SQL = "SELECT SUM(oi.sale_price) AS revenue FROM `bigquery-public-data.thelook_ecommerce.order_items` AS oi"
-ROWS = ({"category": "Suits", "revenue": 3403.2}, {"category": "Outerwear", "revenue": 2420.77},
-        {"category": "Sweaters", "revenue": "1351.06"})
+ROWS = (
+    {"category": "Suits", "revenue": 3403.2},
+    {"category": "Outerwear", "revenue": 2420.77},
+    {"category": "Sweaters", "revenue": "1351.06"},
+)
 
 
 class AgentGroundingTests(unittest.TestCase):
@@ -43,8 +47,9 @@ class AgentGroundingTests(unittest.TestCase):
         self.assertIn("$7,175.03", feedback["message"])
         self.assertNotIn("could not be matched", turn.answer)
         self.assertEqual(turn.queries, 2)
-        self.logger.warning.assert_any_call("answer_ungrounded_figures", extra={
-            "turn_id": ANY, "row_count": 1, "status": "repair"})
+        self.logger.warning.assert_any_call(
+            "answer_ungrounded_figures", extra={"turn_id": ANY, "row_count": 1, "status": "repair"}
+        )
         self.assertIsNotNone(self.agent.last_answer)  # Feedback is not a failed query.
 
     def test_when_budget_is_spent_the_answer_is_delivered_with_a_note(self):

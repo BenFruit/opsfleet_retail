@@ -5,14 +5,18 @@ from retail_agent.agent.answer import PARTIAL_PREFIX, finalize_answer, partial_a
 from retail_agent.agent.models import AgentLimits
 from support.agent_state import checked, failed, turn_state
 
-
 LIMITS = AgentLimits()
 
 
 def finalize(state, text, **kwargs):
     with patch("retail_agent.agent.answer.logger"):
-        return finalize_answer(state, text, {"model_calls": state["model_calls"]}, limits=LIMITS,
-                               authorized_brand_count=kwargs.get("brands", 2))
+        return finalize_answer(
+            state,
+            text,
+            {"model_calls": state["model_calls"]},
+            limits=LIMITS,
+            authorized_brand_count=kwargs.get("brands", 2),
+        )
 
 
 class QueryFailureTests(unittest.TestCase):
@@ -67,8 +71,12 @@ class FinalizeAnswerTests(unittest.TestCase):
         self.assertNotIn("could not be matched", update["answer"])
 
     def test_report_and_memory_results_are_appended(self):
-        reports = {"status": "report", "operation": "list", "reports": [
-            {"report_id": "a" * 32, "title": "Q1", "created_at": "2026-11-03"}], "note": ""}
+        reports = {
+            "status": "report",
+            "operation": "list",
+            "reports": [{"report_id": "a" * 32, "title": "Q1", "created_at": "2026-11-03"}],
+            "note": "",
+        }
         memory = {"status": "memory", "message": "Memory saved: 1 new entries."}
         answer = finalize(turn_state(reports, memory), "Here are your reports.")["answer"]
         self.assertIn("Report sources:\n" + "a" * 32 + " | Q1", answer)

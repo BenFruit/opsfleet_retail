@@ -12,11 +12,16 @@ from decimal import Decimal
 
 def render_observation(observation: dict, *, max_rows: int = 200) -> str:
     """Render checked values; never invent pages or hidden rows."""
+
     def cell(value, column=""):
         if value is None:
             return "null"
         text = format(value, ".12g") if isinstance(value, float) else str(value)
-        if any(word in column.lower() for word in ("revenue", "profit", "price", "cost", "spend", "amount")) and isinstance(value, (int, float, Decimal)) and not isinstance(value, bool):
+        if (
+            any(word in column.lower() for word in ("revenue", "profit", "price", "cost", "spend", "amount"))
+            and isinstance(value, (int, float, Decimal))
+            and not isinstance(value, bool)
+        ):
             text = f"{Decimal(str(value)):,.2f}"
         return text.replace("|", "\\|").replace("\n", " ").replace("\r", " ")
 
@@ -24,7 +29,10 @@ def render_observation(observation: dict, *, max_rows: int = 200) -> str:
     lines = ["The checked query returned no publishable rows."]
     if rows:
         columns = list(rows[0])
-        lines = ["| " + " | ".join(cell(name) for name in columns) + " |", "| " + " | ".join("---" for _ in columns) + " |"]
+        lines = [
+            "| " + " | ".join(cell(name) for name in columns) + " |",
+            "| " + " | ".join("---" for _ in columns) + " |",
+        ]
         lines += ["| " + " | ".join(cell(row[name], name) for name in columns) + " |" for row in rows[:max_rows]]
         if len(rows) > max_rows:
             lines.append(f"Showing {max_rows} of {len(rows)} available result rows.")
@@ -68,5 +76,9 @@ def render_reports(observation: dict) -> str:
         return "No matching reports. Nothing was deleted." if operation == "prepare_delete" else "No reports found."
     lines = [f"{row['report_id']} | {row['title']} | {row['created_at']}" for row in rows]
     if operation == "prepare_delete":
-        return "Deletion preview (nothing deleted yet):\n" + "\n".join(lines) + "\n\nConfirm ONLY with /confirm within 5 minutes, or /cancel. Any other question cancels this preview."
+        return (
+            "Deletion preview (nothing deleted yet):\n"
+            + "\n".join(lines)
+            + "\n\nConfirm ONLY with /confirm within 5 minutes, or /cancel. Any other question cancels this preview."
+        )
     return "\n".join(lines) + "\n" + observation.get("note", "")

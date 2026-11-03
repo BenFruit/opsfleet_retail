@@ -15,8 +15,15 @@ class StartupDiagnosticsTests(unittest.TestCase):
 
         self.application, self.cli = application, cli
         self.settings = Settings(_env_file=None, gemini_api_key="fake", gemini_model="m")
-        for name in ("configure_logging", "configure_tracing", "SchemaService", "build_agent", "connection_factory",
-                     "Embedder", "QueryService"):
+        for name in (
+            "configure_logging",
+            "configure_tracing",
+            "SchemaService",
+            "build_agent",
+            "connection_factory",
+            "Embedder",
+            "QueryService",
+        ):
             self.enterContext(patch.object(application, name))
         self.shutdown_tracing = self.enterContext(patch.object(application, "shutdown_tracing"))
         self.entitlements = self.enterContext(patch.object(application, "Entitlements"))
@@ -36,7 +43,8 @@ class StartupDiagnosticsTests(unittest.TestCase):
         self.assertIn("stage 'bigquery_client' (RuntimeError)", self.stdout.getvalue())
         self.assertIn("gcloud auth application-default login", self.stdout.getvalue())
         self.logger.error.assert_called_once_with(
-            "startup_failed", extra={"stage": "bigquery_client", "error_type": "RuntimeError"},
+            "startup_failed",
+            extra={"stage": "bigquery_client", "error_type": "RuntimeError"},
         )
         self.assertNotIn("SECRET", self.stdout.getvalue() + repr(self.logger.mock_calls))
         self.run_chat.assert_not_called()
@@ -44,8 +52,10 @@ class StartupDiagnosticsTests(unittest.TestCase):
         self.gemini.from_settings.return_value.close.assert_called_once()
 
     def test_access_config_problems_get_direct_messages(self):
-        for error, expected in ((FileNotFoundError("SECRET path"), "Access config not found"),
-                                (PermissionError("SECRET"), "no authorized brands")):
+        for error, expected in (
+            (FileNotFoundError("SECRET path"), "Access config not found"),
+            (PermissionError("SECRET"), "no authorized brands"),
+        ):
             with self.subTest(error=type(error).__name__):
                 self.entitlements.from_file.side_effect = error
                 self.assertEqual(self.run_main(), 1)
@@ -68,8 +78,13 @@ class StartupDiagnosticsTests(unittest.TestCase):
         self.assertEqual(self.logger.info.call_args.args[0], "startup_completed")
 
     def test_invalid_settings_and_cohort_flag(self):
-        with patch.object(self.cli, "Settings", side_effect=ValidationError.from_exception_data(
-                "Settings", [{"type": "int_parsing", "loc": ("reports_postgres_port",), "input": "SECRET"}])):
+        with patch.object(
+            self.cli,
+            "Settings",
+            side_effect=ValidationError.from_exception_data(
+                "Settings", [{"type": "int_parsing", "loc": ("reports_postgres_port",), "input": "SECRET"}]
+            ),
+        ):
             self.assertEqual(self.cli.main([]), 1)
         self.assertIn("REPORTS_POSTGRES_PORT", self.stdout.getvalue())
         self.assertNotIn("SECRET", self.stdout.getvalue())

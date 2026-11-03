@@ -9,7 +9,6 @@ from retail_agent.memory.models import RememberRequest, UserMemoryError
 from retail_agent.memory.service import UserMemory
 from support.demo_access import DEMO_ENTITLEMENTS
 
-
 SQL = "SELECT SUM(oi.sale_price) AS revenue FROM `bigquery-public-data.thelook_ecommerce.order_items` oi"
 
 
@@ -26,8 +25,15 @@ class MemoryGraphTests(unittest.TestCase):
         self.queries.execute.return_value = QueryResult("id", ({"revenue": 30},), False, 1, 1, 1)
         self.memory = Mock(spec=UserMemory)
         self.memory.load.return_value = []
-        self.memory.remember.return_value = {"status": "memory", "saved": True, "count": 1, "message": "Memory saved: 1 new entry."}
-        self.agent = AnalyticalAgent(self.analyst, self.queries, manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS, memory=self.memory)
+        self.memory.remember.return_value = {
+            "status": "memory",
+            "saved": True,
+            "count": 1,
+            "message": "Memory saved: 1 new entry.",
+        }
+        self.agent = AnalyticalAgent(
+            self.analyst, self.queries, manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS, memory=self.memory
+        )
 
     def test_both_orderings_complete_query_and_remember_in_one_turn(self):
         for ordering in ("remember_first", "query_first"):
@@ -47,8 +53,11 @@ class MemoryGraphTests(unittest.TestCase):
     def test_current_turn_and_next_question_receive_updated_memory(self):
         entries = [{"memory_id": "a" * 32, "text": "Prefers bullets."}]
         self.memory.load.side_effect = [[], entries, entries]
-        self.analyst.decide.side_effect = [remember(), AgentAction(action="answer", answer="Noted."),
-                                            AgentAction(action="answer", answer="- Hello.")]
+        self.analyst.decide.side_effect = [
+            remember(),
+            AgentAction(action="answer", answer="Noted."),
+            AgentAction(action="answer", answer="- Hello."),
+        ]
         self.agent.ask("Remember bullets")
         self.assertEqual(self.analyst.decide.call_args.kwargs["user_memory"]["items"], entries)
         self.agent.reset()
@@ -58,8 +67,11 @@ class MemoryGraphTests(unittest.TestCase):
 
     def test_failed_memory_does_not_prevent_analysis(self):
         self.memory.remember.side_effect = UserMemoryError("Memory was not saved.")
-        self.analyst.decide.side_effect = [remember(), AgentAction(action="query", sql=SQL),
-                                            AgentAction(action="answer", answer="Revenue is 30.")]
+        self.analyst.decide.side_effect = [
+            remember(),
+            AgentAction(action="query", sql=SQL),
+            AgentAction(action="answer", answer="Revenue is 30."),
+        ]
         result = self.agent.ask("Analyze revenue and remember bullets")
         self.assertIn("Revenue is 30", result.answer)
         self.assertIn("not saved", result.answer)

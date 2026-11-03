@@ -18,16 +18,16 @@ class SchemaService:
             column_name = column["name"]
 
             if column_name not in column_policies:
-                raise ValueError(
-                    f"Missing policy for '{table_name}.{column_name}'"
-                )
+                raise ValueError(f"Missing policy for '{table_name}.{column_name}'")
 
             policy = column_policies[column_name]
 
-            enriched_schema.append({
-                **column,
-                "access_level": policy.access_level.value,
-            })
+            enriched_schema.append(
+                {
+                    **column,
+                    "access_level": policy.access_level.value,
+                }
+            )
 
         return enriched_schema
 

@@ -52,8 +52,13 @@ def summarize(events: list[dict]) -> dict:
     sql_turns = [obs for tid, obs in observations.items() if tid in turn_ids]
     first_ok = sum(1 for obs in sql_turns if obs[0]["status"] in {"ok", "empty"})
     had_error = [obs for obs in sql_turns if any(o["status"] == "error" for o in obs)]
-    recovered = sum(1 for obs in had_error
-                    if any(o["status"] in {"ok", "empty"} for o in obs[next(i for i, o in enumerate(obs) if o["status"] == "error"):]))
+    recovered = sum(
+        1
+        for obs in had_error
+        if any(
+            o["status"] in {"ok", "empty"} for o in obs[next(i for i, o in enumerate(obs) if o["status"] == "error") :]
+        )
+    )
 
     tokens = defaultdict(int)
     for event in by_name["agent_model_completed"]:
@@ -83,20 +88,27 @@ def summarize(events: list[dict]) -> dict:
             "failures_by_code": dict(Counter(e.get("error_code") for e in by_name["agent_model_failed"]).most_common()),
             "retries": sum(not e.get("fallback") for e in by_name["model_retry"]),
             "fallbacks": sum(bool(e.get("fallback")) for e in by_name["model_retry"]),
-            "answered_by": dict(Counter(e.get("model") for e in by_name["agent_model_completed"] if e.get("model")).most_common()),
+            "answered_by": dict(
+                Counter(e.get("model") for e in by_name["agent_model_completed"] if e.get("model")).most_common()
+            ),
         },
         "golden": {
             "retrievals": len(golden),
             "hit_rate": _rate(sum(e.get("row_count", 0) > 0 for e in golden), len(golden)),
-            "top_similarity_p50": _percentile([e["top_similarity"] for e in golden if e.get("top_similarity") is not None], 0.5),
+            "top_similarity_p50": _percentile(
+                [e["top_similarity"] for e in golden if e.get("top_similarity") is not None], 0.5
+            ),
             "failures": len(by_name["golden_retrieval_failed"]),
             "most_used": dict(Counter(i for e in golden for i in e.get("golden_ids", [])).most_common(5)),
         },
         "grounding": dict(Counter(e.get("status") for e in by_name["answer_ungrounded_figures"])),
         "reports": dict(Counter(e.get("action") for e in by_name["agent_report_completed"])),
         "deletions_confirmed": len(by_name["report_delete_completed"]),
-        "dependency_warnings": {name: len(by_name[name]) for name in (
-            "persona_load_failed", "user_memory_load_failed", "tracing_unavailable", "startup_failed") if by_name[name]},
+        "dependency_warnings": {
+            name: len(by_name[name])
+            for name in ("persona_load_failed", "user_memory_load_failed", "tracing_unavailable", "startup_failed")
+            if by_name[name]
+        },
     }
 
 

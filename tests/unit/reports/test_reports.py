@@ -1,24 +1,29 @@
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import Mock, patch
 
 from retail_agent.llm.embeddings import Embedder, EmbeddingError
+from retail_agent.presentation import render_reports
 from retail_agent.reports.models import ReportError, ReportRequest
 from retail_agent.reports.repository import ReportRepository
-from retail_agent.presentation import render_reports
 from retail_agent.reports.service import ReportLibrary
 from retail_agent.safety.errors import ResultGuardError
 from retail_agent.security.access import Entitlements
 from support.demo_access import DEMO_ENTITLEMENTS
-
 
 VECTOR = [1.0] + [0.0] * 767
 ID = "a" * 32
 
 
 def row(report_id=ID, **extra):
-    return {"report_id": report_id, "title": "Brand A report", "conversation_id": "c" * 32,
-            "created_at": datetime.now(timezone.utc), "content": "Checked report text", **extra}
+    return {
+        "report_id": report_id,
+        "title": "Brand A report",
+        "conversation_id": "c" * 32,
+        "created_at": datetime.now(UTC),
+        "content": "Checked report text",
+        **extra,
+    }
 
 
 class ReportPolicyTests(unittest.TestCase):
@@ -30,9 +35,12 @@ class ReportPolicyTests(unittest.TestCase):
         self.library = ReportLibrary(self.repo, self.embedder, manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS)
 
     def execute(self, **request):
-        return self.library.execute(ReportRequest(**{"query": "", **request}), conversation_id="c" * 32,
-                                    last_answer="Original answer\n| revenue |\n| --- |\n| 30 |",
-                                    last_brands=["Brand A", "Brand B"])
+        return self.library.execute(
+            ReportRequest(**{"query": "", **request}),
+            conversation_id="c" * 32,
+            last_answer="Original answer\n| revenue |\n| --- |\n| 30 |",
+            last_brands=["Brand A", "Brand B"],
+        )
 
     def test_save_uses_snapshot_and_trusted_identity(self):
         result = self.execute(operation="save", title="October")
@@ -45,15 +53,18 @@ class ReportPolicyTests(unittest.TestCase):
 
     def test_missing_answer_never_calls_embedding_or_db(self):
         with self.assertRaises(ReportError):
-            self.library.execute(ReportRequest(operation="save", query=""), conversation_id="c" * 32,
-                                 last_answer=None, last_brands=[])
+            self.library.execute(
+                ReportRequest(operation="save", query=""), conversation_id="c" * 32, last_answer=None, last_brands=[]
+            )
         self.embedder.embed.assert_not_called()
         self.repo.save.assert_not_called()
 
     def test_changed_brands_prevent_saving_old_answer(self):
-        with patch.object(self.library, "entitlements", Entitlements({"manager_a": ["Brand A"]})):
-            with self.assertRaises(ReportError):
-                self.execute(operation="save")
+        with (
+            patch.object(self.library, "entitlements", Entitlements({"manager_a": ["Brand A"]})),
+            self.assertRaises(ReportError),
+        ):
+            self.execute(operation="save")
         self.repo.save.assert_not_called()
 
     def test_embedding_failure_never_saves(self):
@@ -64,8 +75,12 @@ class ReportPolicyTests(unittest.TestCase):
 
     def test_sensitive_text_not_sent_to_embedding(self):
         with self.assertRaises(ResultGuardError):
-            self.library.execute(ReportRequest(operation="save", query=""), conversation_id="c" * 32,
-                                 last_answer="secret@example.com", last_brands=["Brand A"])
+            self.library.execute(
+                ReportRequest(operation="save", query=""),
+                conversation_id="c" * 32,
+                last_answer="secret@example.com",
+                last_brands=["Brand A"],
+            )
         self.embedder.embed.assert_not_called()
 
     def test_search_is_bounded_and_access_scoped(self):
@@ -117,10 +132,12 @@ class ReportPolicyTests(unittest.TestCase):
 
     def test_no_unrestricted_request_fields_or_delete_action(self):
         cases = [
-            {"operation": "delete"}, {"operation": "save", "owner_id": "manager_b"},
+            {"operation": "delete"},
+            {"operation": "save", "owner_id": "manager_b"},
             {"operation": "save", "content": "replacement"},
             {"operation": "search", "query": ""},
-            {"operation": "prepare_delete"}, {"operation": "prepare_delete", "scope": "id"},
+            {"operation": "prepare_delete"},
+            {"operation": "prepare_delete", "scope": "id"},
             {"operation": "open", "report_id": "x; DROP TABLE saved_reports"},
             {"operation": "list", "query": "ignored filter"},
         ]

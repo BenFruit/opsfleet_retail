@@ -17,7 +17,11 @@ class Entitlements:
             raise ValueError("Access config must map manager IDs to lists of brands")
         brands_by_manager = {}
         for manager, brands in mapping.items():
-            if not isinstance(manager, str) or not manager.strip() or not isinstance(brands, (list, tuple, set, frozenset)):
+            if (
+                not isinstance(manager, str)
+                or not manager.strip()
+                or not isinstance(brands, (list, tuple, set, frozenset))
+            ):
                 raise ValueError("Invalid manager access config")
             if any(not isinstance(brand, str) or not brand.strip() for brand in brands):
                 raise ValueError("Brand names must be nonempty strings")

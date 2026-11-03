@@ -1,9 +1,9 @@
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel
 
 
-class DataAccessLevel(str, Enum):
+class DataAccessLevel(StrEnum):
     # Can be used normally in analysis and returned at row level.
     ALLOWED = "allowed"
 

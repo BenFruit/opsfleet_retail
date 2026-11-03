@@ -16,7 +16,6 @@ from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
-
 logger = logging.getLogger(__name__)
 DEFAULT_STYLE = files("retail_agent.llm").joinpath("prompts/default_style.md").read_text(encoding="utf-8").strip()
 
@@ -70,8 +69,9 @@ class GoogleDocReader:
         except Exception as error:
             raise DocumentReadError("persona_invalid_config", error) from None
         # Rebuild the export endpoint from the ID instead of fetching a configured URL.
-        request = Request(f"https://docs.google.com/document/d/{doc_id}/export?format=txt",
-                          headers={"Accept": "text/plain"})
+        request = Request(
+            f"https://docs.google.com/document/d/{doc_id}/export?format=txt", headers={"Accept": "text/plain"}
+        )
         try:
             response = urlopen(request, timeout=self.timeout_seconds)
         except Exception as error:
@@ -109,10 +109,15 @@ class PersonaStyle:
             text = self.reader.read()
         except DocumentReadError as error:
             # No URLs, contents or raw HTTP exceptions in local logs.
-            logger.warning("persona_load_failed", extra={
-                "error_code": error.code, "persona_version": self.current.version, "error_type": error.error_type,
-                **({"http_status": error.http_status} if error.http_status is not None else {}),
-            })
+            logger.warning(
+                "persona_load_failed",
+                extra={
+                    "error_code": error.code,
+                    "persona_version": self.current.version,
+                    "error_type": error.error_type,
+                    **({"http_status": error.http_status} if error.http_status is not None else {}),
+                },
+            )
             return self.current
         self.current = Persona(text, "google_doc")
         logger.info("persona_loaded", extra={"persona_version": self.current.version, "status": "ok"})

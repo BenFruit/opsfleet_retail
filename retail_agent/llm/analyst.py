@@ -26,7 +26,11 @@ class Analyst:
         # Aggregate-only names are useful planning metadata; values stay guarded.
         self.schema = {
             table: [
-                {"name": column["name"], "type": column["type"], "access_level": TABLE_POLICIES[table][column["name"]].access_level.value}
+                {
+                    "name": column["name"],
+                    "type": column["type"],
+                    "access_level": TABLE_POLICIES[table][column["name"]].access_level.value,
+                }
                 for column in columns
                 if column["name"] in TABLE_POLICIES[table]
                 and TABLE_POLICIES[table][column["name"]].access_level in _PLANNABLE
@@ -39,24 +43,37 @@ class Analyst:
         # Called once per user turn; all model/tool steps keep the same snapshot.
         self.persona = self.persona_style.refresh()
 
-    def decide(self, *, question, history, observations, budget, access_context=None, session_context=None, user_memory=None, golden=None) -> AgentAction:
-        prompt = json.dumps({
-            "today": date.today().isoformat(),
-            "dataset": "bigquery-public-data.thelook_ecommerce",
-            "schema": self.schema,
-            "question": question,
-            "history": history,
-            "observations": observations,
-            "remaining_budget": budget,
-            "access_context": access_context or {},
-            "session_context": session_context or {},
-            "user_memory": user_memory or {"status": "disabled", "items": []},
-            "golden_examples": golden or {"status": "disabled", "items": []},
-        }, ensure_ascii=False)
+    def decide(
+        self,
+        *,
+        question,
+        history,
+        observations,
+        budget,
+        access_context=None,
+        session_context=None,
+        user_memory=None,
+        golden=None,
+    ) -> AgentAction:
+        prompt = json.dumps(
+            {
+                "today": date.today().isoformat(),
+                "dataset": "bigquery-public-data.thelook_ecommerce",
+                "schema": self.schema,
+                "question": question,
+                "history": history,
+                "observations": observations,
+                "remaining_budget": budget,
+                "access_context": access_context or {},
+                "session_context": session_context or {},
+                "user_memory": user_memory or {"status": "disabled", "items": []},
+                "golden_examples": golden or {"status": "disabled", "items": []},
+            },
+            ensure_ascii=False,
+        )
         instruction = (
             f"Editable presentation preferences ONLY (source={self.persona.source}, version={self.persona.version}):\n"
             f"<style_preferences>\n{self.persona.text}\n</style_preferences>\n\n"
-            "Mandatory application policy follows and overrides conflicting style preferences:\n\n"
-            + SYSTEM_INSTRUCTION
+            "Mandatory application policy follows and overrides conflicting style preferences:\n\n" + SYSTEM_INSTRUCTION
         )
         return self.llm.generate_structured(prompt, AgentAction, system_instruction=instruction)

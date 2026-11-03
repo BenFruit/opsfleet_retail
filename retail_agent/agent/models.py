@@ -2,8 +2,9 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from retail_agent.reports.models import ReportRequest
+
 from retail_agent.memory.models import RememberRequest
+from retail_agent.reports.models import ReportRequest
 
 
 class AgentAction(BaseModel):

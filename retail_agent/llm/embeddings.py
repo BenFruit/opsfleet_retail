@@ -12,7 +12,6 @@ from google.genai import types
 from retail_agent.observability.tracing import trace_generation
 from retail_agent.safety.sensitive_text import check_text
 
-
 DIMENSIONS = 768
 MAX_INPUT_BYTES = 8_000
 
@@ -67,7 +66,8 @@ class Embedder:
         try:
             with trace_generation(self.model, formatted, None, name=observation_name) as span:
                 result = self.client.models.embed_content(
-                    model=self.model, contents=formatted,
+                    model=self.model,
+                    contents=formatted,
                     config=types.EmbedContentConfig(output_dimensionality=DIMENSIONS),
                 )
                 if not result.embeddings or len(result.embeddings) != 1:
@@ -80,4 +80,6 @@ class Embedder:
         except EmbeddingError:
             raise
         except Exception:
-            raise EmbeddingError("Embedding service is unavailable; the operation was not completed. Try again later.") from None
+            raise EmbeddingError(
+                "Embedding service is unavailable; the operation was not completed. Try again later."
+            ) from None

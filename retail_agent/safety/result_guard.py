@@ -45,7 +45,13 @@ def make_observation(sql: str, result: "QueryResult", *, max_chars: int) -> dict
     expected = set(columns) | ({COHORT_COLUMN} if minimum is not None else set())
     context = result.query_context
     check_text(json.dumps(context, ensure_ascii=False))
-    observation = {"status": "empty", "query_id": result.query_id, "rows": [], "truncated": result.truncated, "query_context": context}
+    observation = {
+        "status": "empty",
+        "query_id": result.query_id,
+        "rows": [],
+        "truncated": result.truncated,
+        "query_context": context,
+    }
     if minimum is not None:
         observation["privacy_note"] = (
             f"Only groups with at least {minimum} distinct contributing buyers are publishable. "

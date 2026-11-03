@@ -18,12 +18,28 @@ EVENTS = [
     event("agent_observation", turn_id="t1", query_id="q2", status="ok"),
     event("agent_model_completed", turn_id="t1", total_tokens=100, model="m"),
     event("agent_model_completed", turn_id="t1", total_tokens=50, model="m"),
-    event("agent_turn_completed", turn_id="t1", status="ok", duration_ms=4000, model_calls=2, query_count=2, scan_bytes_used=20_000_000),
+    event(
+        "agent_turn_completed",
+        turn_id="t1",
+        status="ok",
+        duration_ms=4000,
+        model_calls=2,
+        query_count=2,
+        scan_bytes_used=20_000_000,
+    ),
     event("golden_retrieved", turn_id="t2", row_count=0, top_similarity=0.5, golden_ids=[]),
     event("agent_observation", turn_id="t2", query_id="q3", status="ok"),
     event("model_retry", error_code="model_unavailable", fallback=True, model="backup"),
     event("answer_ungrounded_figures", turn_id="t2", status="repair", row_count=1),
-    event("agent_turn_completed", turn_id="t2", status="partial", duration_ms=8000, model_calls=3, query_count=1, scan_bytes_used=0),
+    event(
+        "agent_turn_completed",
+        turn_id="t2",
+        status="partial",
+        duration_ms=8000,
+        model_calls=3,
+        query_count=1,
+        scan_bytes_used=0,
+    ),
 ]
 
 
@@ -45,7 +61,10 @@ class MetricsTests(unittest.TestCase):
         self.assertEqual(sorted(set(ids)), ["q1", "q2"])
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "log.jsonl"
-            path.write_text("\n".join([json.dumps(EVENTS[0]), "not json", json.dumps(event("x", time="2026-11-01"))]), encoding="utf-8")
+            path.write_text(
+                "\n".join([json.dumps(EVENTS[0]), "not json", json.dumps(event("x", time="2026-11-01"))]),
+                encoding="utf-8",
+            )
             self.assertEqual(len(load_events(path)), 2)
             self.assertEqual(len(load_events(path, since="2026-11-02")), 1)
 

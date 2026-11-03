@@ -9,7 +9,6 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-
 MAX_ENTRIES = 20  # Per owner; checked by the service and again under the DB lock.
 MAX_ENTRY_CHARS = 200  # Also the user_memories.content VARCHAR(200) column limit.
 MAX_ENTRIES_PER_REQUEST = 5  # One remember action may add at most this many.

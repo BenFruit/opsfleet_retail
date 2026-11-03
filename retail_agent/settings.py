@@ -12,8 +12,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", env_ignore_empty=True,
-                                      extra="ignore", frozen=True)
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", env_ignore_empty=True, extra="ignore", frozen=True
+    )
 
     # Gemini. Required for the chat; checked by the entry point with a clear message.
     gemini_api_key: SecretStr | None = None

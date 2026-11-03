@@ -21,8 +21,9 @@ class StorageError(RuntimeError):
 STORAGE_UNAVAILABLE = "Application storage is unavailable or the operation failed. No success is confirmed."
 
 
-def connection_factory(settings: Settings, *, user: str | None = None, password: str | None = None,
-                       statement_timeout_ms: int = 5000):
+def connection_factory(
+    settings: Settings, *, user: str | None = None, password: str | None = None, statement_timeout_ms: int = 5000
+):
     """Return a context-manager factory yielding a dict-row connection.
 
     The chat role comes from settings; the Golden ingestion job passes its own
@@ -40,8 +41,10 @@ def connection_factory(settings: Settings, *, user: str | None = None, password:
     def connection():
         try:
             with psycopg.connect(
-                **params, connect_timeout=3,
-                options=f"-c statement_timeout={statement_timeout_ms} -c timezone=UTC", row_factory=dict_row,
+                **params,
+                connect_timeout=3,
+                options=f"-c statement_timeout={statement_timeout_ms} -c timezone=UTC",
+                row_factory=dict_row,
             ) as conn:
                 yield conn
         except (psycopg.Error, ValueError):
