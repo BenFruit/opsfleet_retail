@@ -42,7 +42,10 @@ ORDERS_COLUMN_POLICIES = {
     "shipped_at": ColumnPolicy(access_level=DataAccessLevel.ALLOWED),
     "delivered_at": ColumnPolicy(access_level=DataAccessLevel.ALLOWED),
 
-    "num_of_item": ColumnPolicy(access_level=DataAccessLevel.ALLOWED),
+    "num_of_item": ColumnPolicy(
+        access_level=DataAccessLevel.BLOCKED_UNSCOPED,
+        description="Count authorized order_items instead of whole-order num_of_item",
+    ),
 }
 
 
@@ -85,6 +88,11 @@ TABLE_POLICIES = {
     "order_items": ORDER_ITEMS_COLUMN_POLICIES,
     "products": PRODUCTS_COLUMN_POLICIES,
 }
+
+# Order is the order the model sees the tables in.
+ANALYSIS_TABLES = ("orders", "order_items", "products", "users")
+if set(ANALYSIS_TABLES) != set(TABLE_POLICIES):
+    raise RuntimeError("Every analysis table needs a column policy")
 
 CATALOG_NAME = "bigquery-public-data"
 DB_NAME = "thelook_ecommerce"

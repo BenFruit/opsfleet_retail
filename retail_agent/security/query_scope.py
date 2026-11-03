@@ -23,8 +23,8 @@ def _scoped_source(table_name: str, *, demographics: bool = False) -> exp.Select
     columns = ", ".join(
         f"r.`{name}`"
         for name, policy in TABLE_POLICIES[table_name].items()
-        if (policy.access_level == DataAccessLevel.ALLOWED or demographics and policy.access_level == DataAccessLevel.AGGREGATE_ONLY)
-        and not (table_name == "orders" and name == "num_of_item")
+        if policy.access_level == DataAccessLevel.ALLOWED
+        or demographics and policy.access_level == DataAccessLevel.AGGREGATE_ONLY
     )
 
     if table_name == "products":

@@ -5,19 +5,13 @@ import os
 from dotenv import load_dotenv
 
 from retail_agent.agent.orchestrator import AnalyticalAgent
+from retail_agent.bootstrap import build_agent, golden_retrieval_enabled
 from retail_agent.data.bigquery_runner import BigQueryRunner
 from retail_agent.data.query_service import QueryLimits, QueryService
-from retail_agent.golden.repository import GoldenRepository
-from retail_agent.golden.service import GoldenKnowledge
-from retail_agent.llm.analyst import Analyst
 from retail_agent.llm.client import GeminiClient
 from retail_agent.llm.embeddings import Embedder
 from retail_agent.observability.logging import configure_logging
 from retail_agent.observability.tracing import shutdown_tracing
-from retail_agent.reports.repository import ReportRepository
-from retail_agent.reports.service import ReportLibrary
-from retail_agent.memory.repository import MemoryRepository
-from retail_agent.memory.service import UserMemory
 from retail_agent.schema.service import SchemaService
 from retail_agent.security.access import Entitlements
 from retail_agent.storage.postgres import connection_factory
@@ -97,24 +91,13 @@ def main() -> int:
         stage = "bigquery_client"
         runner = BigQueryRunner(project_id=args.project)
         stage = "bigquery_schema"
-        schema_service = SchemaService(runner)
-        schema = {table: schema_service.get_table_schema(table) for table in (
-            "orders", "order_items", "products", "users",
-        )}
+        schema = SchemaService(runner).load_analysis_schema()
         stage = "agent_init"
-        connect = connection_factory()
-        embedder = Embedder(llm)
-        golden = None
-        if os.getenv("GOLDEN_RETRIEVAL_ENABLED", "true").lower() == "true":
-            # The agent reads the index with its own read-only grant; ingestion is a separate job.
-            golden = GoldenKnowledge(GoldenRepository(connect), embedder)
-        agent = AnalyticalAgent(
-            Analyst(llm, schema),
-            QueryService(runner, QueryLimits(minimum_cohort_size=args.min_cohort_size)),
+        golden = golden_retrieval_enabled()
+        agent = build_agent(
+            llm, schema, QueryService(runner, QueryLimits(minimum_cohort_size=args.min_cohort_size)),
             manager_id=args.manager, entitlements=entitlements,
-            reports=ReportLibrary(ReportRepository(connect), embedder, manager_id=args.manager, entitlements=entitlements),
-            memory=UserMemory(MemoryRepository(connect), embedder, manager_id=args.manager),
-            golden=golden,
+            connect=connection_factory(), embedder=Embedder(llm), golden=golden, memory=True,
         )
         logger.info("startup_completed", extra={
             "model": llm.model, "fallback": llm.fallback_model is not None, "status": "golden_on" if golden else "golden_off",

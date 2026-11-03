@@ -1,4 +1,4 @@
-from .catalog import TABLE_POLICIES
+from .catalog import ANALYSIS_TABLES, TABLE_POLICIES
 
 
 class SchemaService:
@@ -30,3 +30,7 @@ class SchemaService:
             })
 
         return enriched_schema
+
+    def load_analysis_schema(self) -> dict[str, list[dict]]:
+        """Policy-annotated schema of every analysis table."""
+        return {table: self.get_table_schema(table) for table in ANALYSIS_TABLES}

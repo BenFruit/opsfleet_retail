@@ -22,7 +22,8 @@ it is historical reference, not current source or a production security proof.
 against the policy catalog using SQLGlot and rejects unknown sources, direct PII
 anywhere, DML/DDL, wildcard projections, external/UDF/identity functions, custom
 parameters and unsupported source modifiers. Aliases do not change column policy.
-`orders.num_of_item` is blocked because it can include unauthorized brands.
+`orders.num_of_item` has the `blocked_unscoped` policy because a whole-order
+count can include unauthorized brands; the catalog, not special cases, blocks it.
 
 `security/query_scope.py` replaces every physical source with an authorized-brand
 relation, including sources inside ordinary CTEs/subqueries. Only approved source

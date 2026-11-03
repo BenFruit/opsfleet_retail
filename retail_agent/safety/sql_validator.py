@@ -78,10 +78,10 @@ def validate_query(sql: str):
                         raise SQLValidationError("Unknown column")
                     if policy.access_level == DataAccessLevel.BLOCKED_PII:
                         raise SQLValidationError("PII column is forbidden")
+                    if policy.access_level == DataAccessLevel.BLOCKED_UNSCOPED:
+                        raise SQLValidationError(policy.description)
                     if policy.access_level == DataAccessLevel.AGGREGATE_ONLY:
                         demographic = True
-                    if source.name == "orders" and column.name == "num_of_item":
-                        raise SQLValidationError("Count authorized order_items instead of whole-order num_of_item")
         if demographic:
             try:
                 tree.meta["demographic_subject"] = validate_demographic_sql(tree)

@@ -11,7 +11,8 @@ from retail_agent.data.query_service import QueryLimits
 from retail_agent.llm.embeddings import Embedder, EmbeddingError, vector_literal
 from retail_agent.reports.models import ReportError, ReportRequest
 from retail_agent.reports.repository import ReportRepository
-from retail_agent.reports.service import ReportLibrary, render_reports
+from retail_agent.presentation import render_reports
+from retail_agent.reports.service import ReportLibrary
 from retail_agent.safety.result_guard import ResultGuardError
 from retail_agent.security.access import Entitlements
 from retail_agent.storage.postgres import connection_factory

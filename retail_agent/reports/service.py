@@ -95,18 +95,3 @@ class ReportLibrary:
         deleted = self.repository.delete(pending.ids, **self._access())
         logger.info("report_delete_completed", extra={"row_count": deleted, "status": "ok"})
         return f"Deleted {deleted} of {len(pending.ids)} previewed reports. Ownership/access were checked again."
-
-
-def render_reports(observation: dict) -> str:
-    operation = observation["operation"]
-    if operation == "save":
-        return f"Saved report: {observation['title']}\nID: {observation['report_id']}"
-    if operation == "open":
-        return f"{observation['title']}\nID: {observation['report_id']} | {observation['created_at']}\nHistorical snapshot.\n\n{observation['content']}"
-    rows = observation["reports"]
-    if not rows:
-        return "No matching reports. Nothing was deleted." if operation == "prepare_delete" else "No reports found."
-    lines = [f"{row['report_id']} | {row['title']} | {row['created_at']}" for row in rows]
-    if operation == "prepare_delete":
-        return "Deletion preview (nothing deleted yet):\n" + "\n".join(lines) + "\n\nConfirm ONLY with /confirm within 5 minutes, or /cancel. Any other question cancels this preview."
-    return "\n".join(lines) + "\n" + observation.get("note", "")

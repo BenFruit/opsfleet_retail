@@ -101,6 +101,24 @@ class ChatIntegrationTests(unittest.TestCase):
         self.assertEqual(json.loads(text)["turn_id"], "id")
 
 
+class BootstrapTests(unittest.TestCase):
+    def test_chat_and_evaluation_share_wiring_and_optional_parts(self):
+        from retail_agent.bootstrap import build_agent
+
+        connect, embedder = Mock(), Mock()
+        full = build_agent(Mock(), {}, Mock(), manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS,
+                           connect=connect, embedder=embedder, golden=True, memory=True)
+        self.assertIs(full.reports.repository._connect, connect)
+        self.assertIs(full.memory.embedder, embedder)
+        self.assertIs(full.golden.repository.connection, connect)
+        self.assertEqual(full.allowed_brands, ["Brand A", "Brand B"])
+        bare = build_agent(Mock(), {}, Mock(), manager_id="manager_b", entitlements=DEMO_ENTITLEMENTS,
+                           connect=connect, embedder=embedder, golden=False, memory=False)
+        self.assertIsNone(bare.golden)
+        self.assertIsNone(bare.memory)
+        self.assertIsNotNone(bare.reports)
+
+
 class StartupDiagnosticsTests(unittest.TestCase):
     def test_failure_reports_stage_and_error_class_but_not_exception_text(self):
         import main as entrypoint

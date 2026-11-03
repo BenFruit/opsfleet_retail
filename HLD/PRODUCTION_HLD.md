@@ -304,8 +304,10 @@ for the 0.63-0.67 similarity overlap, trios promoted from flagged conversations.
 
 1. **Input:** length limit; email/phone patterns rejected; CLI identity is
    fixed at startup and brands come from trusted config, never from chat.
-2. **Column policy:** every column is `allowed`, `aggregate_only` or
-   `blocked_pii` in a curated catalog. Unknown columns fail closed.
+2. **Column policy:** every column is `allowed`, `aggregate_only`, `blocked_pii`
+   or `blocked_unscoped` (not personal, but mixes brands, e.g.
+   `orders.num_of_item`) in a curated catalog. Blocked columns are not shown to
+   the model. Unknown columns fail closed.
 3. **SQL policy on resolved lineage (SQLGlot):** one read-only SELECT; no DML/DDL,
    wildcards, UDFs, external or identity functions, parameters; blocked columns
    rejected anywhere (select, filter, join, subquery, alias). This answers the

@@ -3,7 +3,8 @@ from datetime import date
 from decimal import Decimal
 
 from retail_agent.data.query_service import QueryResult
-from retail_agent.safety.result_guard import ResultGuardError, check_text, make_observation, render_observation
+from retail_agent.presentation import remove_markdown_tables, render_observation
+from retail_agent.safety.result_guard import ResultGuardError, check_text, make_observation
 from retail_agent.safety.sql_validator import validate_query
 
 
@@ -34,7 +35,6 @@ class ResultGuardTests(unittest.TestCase):
         self.assertEqual(observation["query_context"]["executed_sql"], base)
 
     def test_model_table_is_removed_when_authoritative_table_will_be_appended(self):
-        from retail_agent.safety.result_guard import remove_markdown_tables
         text = "Findings\n\n| revenue |\n| --- |\n| 999 |\n\nInterpretation."
         cleaned = remove_markdown_tables(text)
         self.assertIn("Findings", cleaned)

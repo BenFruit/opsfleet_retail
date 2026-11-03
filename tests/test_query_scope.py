@@ -142,6 +142,18 @@ class QueryScopeTests(unittest.TestCase):
             f"SELECT p.id FROM `{DATASET}.products` AS p", brands=(),
         ), [])
 
+    def test_model_schema_names_only_plannable_columns(self):
+        from unittest.mock import Mock
+        from retail_agent.llm.analyst import Analyst
+
+        schema = {
+            "orders": [{"name": "order_id", "type": "INT64"}, {"name": "num_of_item", "type": "INT64"}],
+            "users": [{"name": "email", "type": "STRING"}, {"name": "age", "type": "INT64"}],
+        }
+        visible = Analyst(Mock(), schema, persona_provider=Mock()).schema
+        self.assertEqual({t: [c["name"] for c in cols] for t, cols in visible.items()},
+                         {"orders": ["order_id"], "users": ["age"]})
+
     def test_aliasless_table_reference(self):
         self.assertEqual(self.execute_scoped(
             f"SELECT products.id FROM `{DATASET}.products` ORDER BY products.id"

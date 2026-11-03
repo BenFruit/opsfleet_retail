@@ -262,13 +262,16 @@ results and are not redacted: use demo data only. Stop with `docker compose down
 ## Repository layout
 
 ```text
-main.py                      CLI and startup wiring
+main.py                      CLI and startup stages
+retail_agent/bootstrap.py    agent wiring shared by the CLI and answer evaluation
+retail_agent/presentation.py Markdown tables and report listings from checked data
 retail_agent/agent/          LangGraph loop, actions, budgets, grounding check
-retail_agent/llm/            Gemini client (retry/fallback), embedder, analyst instructions, persona loader
+retail_agent/llm/            Gemini client (retry/fallback), embedder, analyst, persona loader
+retail_agent/llm/prompts/    mandatory analyst policy prompt (plain text, reviewed as prose)
 retail_agent/data/           BigQuery runner and QueryService (dry run, caps, safe errors)
 retail_agent/safety/         SQL policy, demographic shapes, result guard, numeric grounding
 retail_agent/security/       brand entitlements and per-table scope rewriting
-retail_agent/schema/         column policy catalog (allowed / aggregate-only / blocked PII)
+retail_agent/schema/         column policy catalog (allowed / aggregate-only / blocked PII / blocked unscoped)
 retail_agent/storage/        shared PostgreSQL connection factory
 retail_agent/reports/        saved reports, deletion preview/confirm
 retail_agent/memory/         explicit user preferences

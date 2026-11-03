@@ -7,9 +7,8 @@ and a premature or ungrounded answer is sent back for one bounded repair.
 
 import logging
 
-from retail_agent.reports.service import render_reports
+from retail_agent.presentation import remove_markdown_tables, render_observation, render_reports
 from retail_agent.safety.grounding import ungrounded_figures
-from retail_agent.safety.result_guard import remove_markdown_tables, render_observation
 
 
 logger = logging.getLogger(__name__)

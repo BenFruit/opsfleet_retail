@@ -20,8 +20,10 @@ Reading order:
 - `retail_agent/agent/`: Pydantic actions and limits; `orchestrator.py` (LangGraph
   loop, nodes, budgets), `answer.py` (final-answer checks and repair feedback),
   `commands.py` (exact slash commands, no model), `conversation.py` (history).
-- `retail_agent/llm/`: direct Gemini SDK, shared `Embedder`, mandatory analyst
-  instructions, style loader.
+- `retail_agent/llm/`: direct Gemini SDK, shared `Embedder`, analyst, style loader;
+  the mandatory policy prompt is `llm/prompts/analyst_policy.md`.
+- `retail_agent/bootstrap.py`: agent wiring shared by `main.py` and answer
+  evaluation. `retail_agent/presentation.py`: user-facing Markdown rendering.
 - `retail_agent/data/`, `schema/`, `safety/`, `security/`: query execution,
   curated source policy, SQL/result guards, `Entitlements` (loaded once in
   `main.py`, passed explicitly) and trusted brand rewriting.

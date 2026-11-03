@@ -23,7 +23,7 @@ from retail_agent.llm.embeddings import EmbeddingError
 from retail_agent.memory.models import UserMemoryError
 from retail_agent.observability.tracing import get_callbacks
 from retail_agent.reports.models import ReportError
-from retail_agent.reports.service import render_reports
+from retail_agent.presentation import render_reports
 from retail_agent.safety.result_guard import ResultGuardError, check_text, make_observation
 
 

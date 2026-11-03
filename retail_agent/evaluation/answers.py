@@ -218,17 +218,12 @@ def summarize(records: list[dict]) -> dict:
 def main(argv=None) -> int:
     from dotenv import load_dotenv
 
-    from retail_agent.agent.orchestrator import AnalyticalAgent
+    from retail_agent.bootstrap import build_agent
     from retail_agent.data.bigquery_runner import BigQueryRunner
     from retail_agent.data.query_service import QueryLimits, QueryService
-    from retail_agent.golden.repository import GoldenRepository
-    from retail_agent.golden.service import GoldenKnowledge
-    from retail_agent.llm.analyst import Analyst
     from retail_agent.llm.client import GeminiClient
-    from retail_agent.observability.logging import configure_logging
     from retail_agent.llm.embeddings import Embedder
-    from retail_agent.reports.repository import ReportRepository
-    from retail_agent.reports.service import ReportLibrary
+    from retail_agent.observability.logging import configure_logging
     from retail_agent.schema.service import SchemaService
     from retail_agent.security.access import Entitlements
     from retail_agent.storage.postgres import connection_factory
@@ -258,20 +253,17 @@ def main(argv=None) -> int:
     runner = BigQueryRunner(project_id=os.getenv("GOOGLE_CLOUD_PROJECT"))
     records = []
     try:
-        schema_service = SchemaService(runner)
-        schema = {t: schema_service.get_table_schema(t) for t in ("orders", "order_items", "products", "users")}
+        schema = SchemaService(runner).load_analysis_schema()
         query_service = QueryService(runner, QueryLimits())
         connect = connection_factory()
-        repository = ReportRepository(connect)
         embedder = Embedder(llm)
-        golden = None if args.no_golden else GoldenKnowledge(GoldenRepository(connect), embedder)
         mode = "baseline" if args.no_golden else "golden"
         for case in cases:
             recorder = RecordingQueryService(query_service)
-            agent = AnalyticalAgent(
-                Analyst(llm, schema), recorder, manager_id=args.manager, entitlements=entitlements,
-                reports=ReportLibrary(repository, embedder, manager_id=args.manager, entitlements=entitlements),
-                golden=golden,
+            # Same wiring as the chat, minus user memory (reproducibility).
+            agent = build_agent(
+                llm, schema, recorder, manager_id=args.manager, entitlements=entitlements,
+                connect=connect, embedder=embedder, golden=not args.no_golden, memory=False,
             )
             started = time.monotonic()
             turn = agent.ask(case.question)
