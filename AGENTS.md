@@ -17,7 +17,9 @@ Reading order:
 ## Repository map
 
 - `main.py`: startup dependencies and CLI commands.
-- `retail_agent/agent/`: Pydantic actions, limits and LangGraph orchestration.
+- `retail_agent/agent/`: Pydantic actions and limits; `orchestrator.py` (LangGraph
+  loop, nodes, budgets), `answer.py` (final-answer checks and repair feedback),
+  `commands.py` (exact slash commands, no model), `conversation.py` (history).
 - `retail_agent/llm/`: direct Gemini SDK, shared `Embedder`, mandatory analyst
   instructions, style loader.
 - `retail_agent/data/`, `schema/`, `safety/`, `security/`: query execution,

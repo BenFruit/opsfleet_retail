@@ -1,13 +1,13 @@
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock
 
 from retail_agent.agent.models import AgentAction
 from retail_agent.agent.orchestrator import AnalyticalAgent
 from retail_agent.data.query_service import QueryLimits, QueryResult, QueryService
 from retail_agent.llm.analyst import Analyst
 from retail_agent.safety.grounding import figures, ungrounded_figures
-from demo_access import DEMO_ENTITLEMENTS
+from demo_access import DEMO_ENTITLEMENTS, patch_agent_loggers
 
 
 SQL = ("SELECT p.category AS category, SUM(oi.sale_price) AS revenue FROM "
@@ -50,7 +50,7 @@ class AgentGroundingTests(unittest.TestCase):
             QueryResult("q2", ({"revenue": 7175.03},), False, 10, 10, 10, columns=("revenue",)),
         ]
         self.agent = AnalyticalAgent(self.analyst, self.service, manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS)
-        self.logger = self.enterContext(patch("retail_agent.agent.orchestrator.logger"))
+        self.logger = patch_agent_loggers(self)
 
     def test_ungrounded_total_triggers_one_sql_correction(self):
         self.analyst.decide.side_effect = [
@@ -65,6 +65,8 @@ class AgentGroundingTests(unittest.TestCase):
         self.assertIn("$7,175.03", feedback["message"])
         self.assertNotIn("could not be matched", turn.answer)
         self.assertEqual(turn.queries, 2)
+        self.logger.warning.assert_any_call("answer_ungrounded_figures", extra={
+            "turn_id": ANY, "row_count": 1, "status": "repair"})
         self.assertIsNotNone(self.agent.last_answer)  # Feedback is not a failed query.
 
     def test_when_budget_is_spent_the_answer_is_delivered_with_a_note(self):

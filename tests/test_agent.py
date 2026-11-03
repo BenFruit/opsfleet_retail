@@ -11,7 +11,7 @@ from retail_agent.agent.models import AgentAction, AgentLimits
 from retail_agent.agent.orchestrator import AnalyticalAgent
 from retail_agent.data.query_service import QueryLimits, QueryResult, QueryService, QueryServiceError
 from retail_agent.llm.analyst import Analyst
-from demo_access import DEMO_ENTITLEMENTS
+from demo_access import DEMO_ENTITLEMENTS, patch_agent_loggers
 
 
 STATUS_SQL = "SELECT DISTINCT oi.status FROM `bigquery-public-data.thelook_ecommerce.order_items` AS oi"
@@ -38,7 +38,7 @@ class AnalyticalAgentTests(unittest.TestCase):
         self.service.limits = QueryLimits(maximum_bytes_billed=1000)
         self.service.execute.return_value = result()
         self.agent = AnalyticalAgent(self.analyst, self.service, manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS)
-        self.logger = self.enterContext(patch("retail_agent.agent.orchestrator.logger"))
+        self.logger = patch_agent_loggers(self)
 
     def test_one_query_then_answer(self):
         self.analyst.decide.side_effect = [query(), answer()]
