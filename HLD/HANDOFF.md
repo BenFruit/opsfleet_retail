@@ -169,8 +169,16 @@ public Git. Do not copy credentials into documentation or commits.
 4. Build a small intent/SQL/report/UX evaluation dataset and test the production-design
    assumptions, prioritizing business grain, status and calendar boundaries.
 5. Done: Golden Knowledge, answer evaluation, design rewrite, diagrams, README.
-   Remaining: fresh-machine setup check; developer review of the experience
-   paragraph in PRODUCTION_HLD.md §3.
+   Remaining: developer review of the experience paragraph in PRODUCTION_HLD.md §3.
+
+Fresh-clone check (3 November, Windows): cloned from GitHub into a new folder and
+followed the README: `uv sync` from scratch (new .venv, 76 packages), compose
+config, 241 offline tests, Golden check/BigQuery dry run/idempotent ingest, one
+CLI question answered with a Golden precedent, clean `git status` afterwards.
+`.env` and `access.local.json` were copied from the developer's setup instead of
+edited by hand. A temporary pgvector container on port 5434 (removed afterwards)
+confirmed that migrations 001-004 initialize a fresh volume, ingest indexed 12 new
+trios, and all 241 tests including PostgreSQL passed against it.
 6. Before real data use: trace redaction, authenticated access/data-layer isolation,
    secret management, backups and stronger adversarial/privacy evaluation.
 
