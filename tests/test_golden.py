@@ -194,10 +194,11 @@ class GoldenEvaluationMetricTests(unittest.TestCase):
 class GoldenPostgresTests(unittest.TestCase):
     def test_writer_publishes_reader_searches_and_reader_cannot_write(self):
         from retail_agent.golden.repository import GoldenRepository
+        from retail_agent.settings import Settings
         from retail_agent.storage.postgres import StorageError, connection_factory, golden_ingest_connection_factory
 
-        writer = GoldenRepository(golden_ingest_connection_factory())
-        reader = GoldenRepository(connection_factory())
+        writer = GoldenRepository(golden_ingest_connection_factory(Settings()))
+        reader = GoldenRepository(connection_factory(Settings()))
         test_trio = trio(id="test-" + uuid4().hex[:12])
         try:
             writer.publish(upserts=[(test_trio, VECTOR)], remove=[], model="test-model")

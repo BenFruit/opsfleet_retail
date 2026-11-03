@@ -13,8 +13,34 @@ thresholds must not change; every step keeps the full suite green (including
 | `fe07aad` | 3. Orchestrator split: `agent/commands.py`, `agent/answer.py`, `agent/conversation.py`. |
 | `00d402c` | 4. `blocked_unscoped` catalog level (num_of_item); `presentation.py`; prompt in `llm/prompts/analyst_policy.md` (byte-identical); `bootstrap.build_agent` shared by CLI and evaluation. |
 
-244 tests pass with PostgreSQL. A live chat smoke test after steps 3-4 is still
-pending (prompt assembly and wiring changed shape).
+244 tests pass with PostgreSQL.
+
+Live chat smoke test after steps 1-4 (3 November, temporary owner
+`smoke_test_owner` with manager_a's brands, Langfuse on): top products, a
+follow-up, age-band revenue with a Golden `Method:` citation, `remember`, report
+save/list/delete preview/`/confirm`, `/memories`, `/forget-all`. All flows worked;
+no warnings or errors in the log; the owner's reports and memories were cleaned up.
+Answer-quality notes, not refactoring regressions: the age-band prose ordered
+"followed by 30-34 ($1,087.33) and 60-64 ($1,163.86)" wrongly and called the
+lowest band "mid-tier" (figures themselves match the table, so the grounding
+check passes); the `remember` turn also restated the previous answer.
+
+## Done locally (not pushed)
+
+- **A. Settings.** `retail_agent/settings.py` (pydantic-settings, frozen) is built
+  once by each entry point (chat, answer evaluation, Golden ingest/evaluate);
+  CLI flags default to its values. `GeminiClient(api_key, model, fallback_model=)`
+  (+ `from_settings`), `Embedder(llm, model)`, `connection_factory(settings)`,
+  `PersonaProvider(doc_id)`, `GoldenKnowledge(min_similarity=)`,
+  `configure_tracing(settings)` (Langfuse client created once with explicit keys).
+  `build_agent` takes `persona_doc_id` and `golden_min_similarity`. No
+  `os.getenv`/`os.environ`/`load_dotenv` remains in `retail_agent/` (a test
+  enforces it); python-dotenv is now only a transitive dependency. Behaviour
+  changes: empty variables use defaults; booleans also accept `1/0/yes/no`;
+  an invalid value (e.g. non-numeric port) stops startup and prints only the
+  variable names; `.env` is read from the current directory. 251 tests pass with
+  PostgreSQL; live: one chat question with Golden and Langfuse enabled, Golden
+  BigQuery dry run.
 
 ## Review findings (backend developer, 3 November) still open
 
@@ -49,7 +75,7 @@ Closed by steps 1-4: 3 (commands extracted), 6 (prompt in a file),
 
 ## Next steps (one commit each)
 
-- **A. Settings.** One `Settings` object (pydantic-settings) built once from
+- ~~A. Settings~~ (done above). One `Settings` object (pydantic-settings) built once from
   `.env` and CLI flags; components receive values through constructors. No
   `os.getenv`/`load_dotenv` inside classes. Findings 1, 9.
 - **B. Application class.** `main.py` becomes a few lines; startup stages and

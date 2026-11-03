@@ -2,7 +2,6 @@
 
 import json
 import logging
-import os
 from time import monotonic
 
 from retail_agent.golden.models import GoldenTrio
@@ -17,13 +16,12 @@ _LEXICAL_WEIGHT = 0.05
 
 
 class GoldenKnowledge:
-    def __init__(self, repository, embedder, *, top_k: int = 3, min_similarity: float | None = None,
+    def __init__(self, repository, embedder, *, top_k: int = 3, min_similarity: float = 0.65,
                  max_prompt_chars: int = 9000):
         self.repository = repository
         self.embedder = embedder
         self.top_k = top_k
-        self.min_similarity = min_similarity if min_similarity is not None else float(
-            os.getenv("GOLDEN_MIN_SIMILARITY", "0.65"))
+        self.min_similarity = min_similarity
         self.max_prompt_chars = max_prompt_chars
 
     @staticmethod

@@ -40,23 +40,22 @@ def best_threshold(results: list[dict]) -> dict:
 
 
 def main(argv=None) -> int:
-    from dotenv import load_dotenv
-
     from retail_agent.golden.repository import GoldenRepository
     from retail_agent.golden.service import GoldenKnowledge
     from retail_agent.llm.client import GeminiClient
     from retail_agent.llm.embeddings import Embedder
+    from retail_agent.settings import Settings
     from retail_agent.storage.postgres import connection_factory
 
-    load_dotenv()
+    settings = Settings()
     parser = argparse.ArgumentParser(description="Evaluate Golden Knowledge retrieval")
     parser.add_argument("--cases", type=Path, default=DEFAULT_CASES)
     args = parser.parse_args(argv)
     cases = json.loads(args.cases.read_text(encoding="utf-8"))
-    llm = GeminiClient()
+    llm = GeminiClient.from_settings(settings)
     try:
-        embedder = Embedder(llm)
-        repository = GoldenRepository(connection_factory())
+        embedder = Embedder(llm, settings.reports_embedding_model)
+        repository = GoldenRepository(connection_factory(settings))
         results = []
         for case in cases:
             text = GoldenKnowledge.query_text(case["question"])

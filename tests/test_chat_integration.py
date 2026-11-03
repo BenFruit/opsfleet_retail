@@ -19,6 +19,7 @@ from retail_agent.llm.client import GeminiClient
 from retail_agent.observability.logging import SafeJsonFormatter
 from retail_agent.schema.catalog import TABLE_POLICIES
 from retail_agent.security.access import Entitlements
+from retail_agent.settings import Settings
 from demo_access import DEMO_ENTITLEMENTS
 
 
@@ -107,13 +108,17 @@ class BootstrapTests(unittest.TestCase):
 
         connect, embedder = Mock(), Mock()
         full = build_agent(Mock(), {}, Mock(), manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS,
-                           connect=connect, embedder=embedder, golden=True, memory=True)
+                           connect=connect, embedder=embedder, golden=True, memory=True,
+                           persona_doc_id="doc", golden_min_similarity=0.7)
         self.assertIs(full.reports.repository._connect, connect)
         self.assertIs(full.memory.embedder, embedder)
         self.assertIs(full.golden.repository.connection, connect)
+        self.assertEqual(full.golden.min_similarity, 0.7)
+        self.assertEqual(full.analyst.persona_provider.doc_id, "doc")
         self.assertEqual(full.allowed_brands, ["Brand A", "Brand B"])
         bare = build_agent(Mock(), {}, Mock(), manager_id="manager_b", entitlements=DEMO_ENTITLEMENTS,
-                           connect=connect, embedder=embedder, golden=False, memory=False)
+                           connect=connect, embedder=embedder, golden=False, memory=False,
+                           persona_doc_id="", golden_min_similarity=0.65)
         self.assertIsNone(bare.golden)
         self.assertIsNone(bare.memory)
         self.assertIsNotNone(bare.reports)
@@ -123,9 +128,9 @@ class StartupDiagnosticsTests(unittest.TestCase):
     def test_failure_reports_stage_and_error_class_but_not_exception_text(self):
         import main as entrypoint
 
-        env = {"GEMINI_API_KEY": "fake", "GEMINI_MODEL": "m"}
-        with patch.dict(os.environ, env, clear=True), patch("sys.argv", ["main.py"]), \
-                patch.object(entrypoint, "load_dotenv"), patch.object(entrypoint, "configure_logging"), \
+        settings = Settings(_env_file=None, gemini_api_key="fake", gemini_model="m")
+        with patch.object(entrypoint, "Settings", return_value=settings), patch("sys.argv", ["main.py"]), \
+                patch.object(entrypoint, "configure_logging"), patch.object(entrypoint, "configure_tracing"), \
                 patch.object(entrypoint, "Entitlements"), \
                 patch.object(entrypoint, "GeminiClient"), patch.object(entrypoint, "shutdown_tracing"), \
                 patch.object(entrypoint, "BigQueryRunner", side_effect=RuntimeError("SECRET credentials path")), \
@@ -142,8 +147,8 @@ class StartupDiagnosticsTests(unittest.TestCase):
 
 class GeminiClientTests(unittest.TestCase):
     def test_constructor_model_override_timeout_and_disabled_retries(self):
-        with patch("retail_agent.llm.client.load_dotenv"), patch.dict(os.environ, {"GEMINI_API_KEY": "fake", "GEMINI_MODEL": "env-model"}, clear=True), patch("retail_agent.llm.client.genai.Client") as sdk:
-            client = GeminiClient(model="explicit-model")
+        with patch("retail_agent.llm.client.genai.Client") as sdk:
+            client = GeminiClient("fake", "explicit-model")
             self.assertEqual(client.model, "explicit-model")
             options = sdk.call_args.kwargs["http_options"]
             self.assertEqual(options.timeout, 30_000)
@@ -152,13 +157,13 @@ class GeminiClientTests(unittest.TestCase):
             sdk.return_value.close.assert_called_once()
 
     def test_structured_action_system_instruction_and_usage(self):
-        with patch("retail_agent.llm.client.load_dotenv"), patch.dict(os.environ, {"GEMINI_API_KEY": "fake", "GEMINI_MODEL": "env-model"}, clear=True), patch("retail_agent.llm.client.genai.Client") as sdk:
+        with patch("retail_agent.llm.client.genai.Client") as sdk:
             generate = sdk.return_value.models.generate_content
             generate.return_value = SimpleNamespace(
                 text='{"action": "answer", "answer": "Schema information"}',
                 usage_metadata=SimpleNamespace(prompt_token_count=10, candidates_token_count=5, total_token_count=15),
             )
-            client = GeminiClient()
+            client = GeminiClient("fake", "env-model")
             action = client.generate_structured("input", AgentAction, system_instruction="rules")
             self.assertEqual(action.action, "answer")
             self.assertEqual(client.last_usage["total_tokens"], 15)
@@ -169,8 +174,19 @@ class GeminiClientTests(unittest.TestCase):
             self.assertFalse(config.response_json_schema["additionalProperties"])
 
     def test_missing_model_is_not_replaced_by_unverified_default(self):
-        with patch("retail_agent.llm.client.load_dotenv"), patch.dict(os.environ, {"GEMINI_API_KEY": "fake"}, clear=True), self.assertRaises(ValueError):
-            GeminiClient()
+        for key, model in (("fake", ""), ("", "model")):
+            with self.subTest(key=bool(key)), patch("retail_agent.llm.client.genai.Client"), self.assertRaises(ValueError):
+                GeminiClient(key, model)
+
+    def test_from_settings_passes_key_models_and_judge_override(self):
+        settings = Settings(_env_file=None, gemini_api_key="fake", gemini_model="primary",
+                            gemini_fallback_model="backup")
+        with patch("retail_agent.llm.client.genai.Client") as sdk:
+            client = GeminiClient.from_settings(settings)
+            judge = GeminiClient.from_settings(settings, model="judge")
+        self.assertEqual(sdk.call_args.kwargs["api_key"], "fake")
+        self.assertEqual((client.model, client.fallback_model), ("primary", "backup"))
+        self.assertEqual(judge.model, "judge")
 
 
 OK_RESPONSE = SimpleNamespace(
@@ -186,15 +202,12 @@ def api_error(status, message="SECRET", retry_after=None):
 
 class GeminiRetryTests(unittest.TestCase):
     def make_client(self, outcomes, fallback=""):
-        env = {"GEMINI_API_KEY": "fake", "GEMINI_MODEL": "primary", "GEMINI_FALLBACK_MODEL": fallback}
-        self.enterContext(patch("retail_agent.llm.client.load_dotenv"))
-        self.enterContext(patch.dict(os.environ, env, clear=True))
         sdk = self.enterContext(patch("retail_agent.llm.client.genai.Client"))
         self.generate = sdk.return_value.models.generate_content
         self.generate.side_effect = outcomes
         self.sleep = Mock()
         self.logger = self.enterContext(patch("retail_agent.llm.client.logger"))
-        return GeminiClient(sleep=self.sleep)
+        return GeminiClient("fake", "primary", fallback_model=fallback, sleep=self.sleep)
 
     def models_called(self):
         return [call.kwargs["model"] for call in self.generate.call_args_list]

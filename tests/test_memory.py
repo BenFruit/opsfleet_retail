@@ -10,6 +10,7 @@ from retail_agent.data.query_service import QueryLimits, QueryResult
 from retail_agent.memory.models import RememberRequest, UserMemoryError
 from retail_agent.memory.repository import MemoryRepository
 from retail_agent.memory.service import UserMemory, explicit_remember, memory_key
+from retail_agent.settings import Settings
 from retail_agent.storage.postgres import connection_factory
 from demo_access import DEMO_ENTITLEMENTS
 
@@ -175,7 +176,7 @@ class MemoryGraphTests(unittest.TestCase):
 @unittest.skipUnless(os.getenv("RETAIL_TEST_POSTGRES") == "1", "Opt-in local PostgreSQL memory test")
 class MemoryPostgresTests(unittest.TestCase):
     def test_embeddings_exact_duplicates_owner_isolation_and_forget(self):
-        repo = MemoryRepository(connection_factory())
+        repo = MemoryRepository(connection_factory(Settings()))
         owner, other = "memory_test_" + uuid4().hex, "memory_test_" + uuid4().hex
         entry = {"text": "Prefers bullets.", "key": memory_key("Prefers bullets."), "vector": VECTOR}
         try:
@@ -184,7 +185,7 @@ class MemoryPostgresTests(unittest.TestCase):
             self.assertEqual(repo.remember(other, [entry], "gemini-embedding-2", uuid4().hex), 1)
             own = repo.load(owner)
             self.assertEqual(len(own), 1)
-            restarted = UserMemory(MemoryRepository(connection_factory()), Mock(), manager_id=owner)
+            restarted = UserMemory(MemoryRepository(connection_factory(Settings())), Mock(), manager_id=owner)
             self.assertEqual(restarted.load()[0]["text"], "Prefers bullets.")
             self.assertEqual(repo.forget(other, own[0]["memory_id"]), 0)
             with repo.connection() as conn:

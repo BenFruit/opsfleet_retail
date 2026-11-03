@@ -1,7 +1,6 @@
 """Editable presentation only. Google Doc loading is optional and read-only."""
 
 import logging
-import os
 import re
 from dataclasses import dataclass
 from hashlib import sha256
@@ -28,8 +27,8 @@ class Persona:
 
 
 class PersonaProvider:
-    def __init__(self, doc_id: str | None = None):
-        self.doc_id = doc_id if doc_id is not None else os.getenv("PERSONA_GOOGLE_DOC_ID", "")
+    def __init__(self, doc_id: str = ""):
+        self.doc_id = doc_id
         self.current = Persona()
 
     @staticmethod

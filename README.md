@@ -205,6 +205,12 @@ change it with `--min-cohort-size N` (minimum 2).
 | `LANGFUSE_*` | Optional local tracing (off by default) |
 | `EVAL_JUDGE_MODEL` | Optional model for the evaluation judge |
 
+Settings are read once at startup by `retail_agent/settings.py` (pydantic-settings)
+and passed to components explicitly. Environment variables override `.env`, which
+is looked up in the current directory, so run commands from the repository root.
+Empty values use the defaults; booleans accept `true`/`false` (also `1`/`0`,
+`yes`/`no`); an invalid value stops startup and names only the variable.
+
 All limits (model calls, SQL attempts, bytes, rows, timeouts) are listed in the
 [design §2.2 and §5.5](HLD/PRODUCTION_HLD.md#55-resilience-and-error-handling).
 

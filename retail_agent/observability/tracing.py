@@ -1,37 +1,49 @@
 """Opt-in Langfuse tracing. Payload redaction is deferred; demo inputs only."""
 
 import logging
-import os
 from contextlib import nullcontext
 
 
 logger = logging.getLogger(__name__)
 _client = None
+_public_key = ""
+
+
+def configure_tracing(settings) -> None:
+    """Initialize once at startup, only on opt-in; never fall back to a cloud endpoint."""
+    global _client, _public_key
+    if not settings.langfuse_tracing_enabled:
+        return
+    if not (settings.langfuse_public_key and settings.langfuse_secret_key and settings.langfuse_base_url):
+        logger.warning("tracing_unavailable", extra={"error_code": "tracing_configuration"})
+        return
+    try:
+        from langfuse import Langfuse
+
+        _client = Langfuse(
+            public_key=settings.langfuse_public_key,
+            secret_key=settings.langfuse_secret_key.get_secret_value(),
+            base_url=settings.langfuse_base_url,
+        )
+        _public_key = settings.langfuse_public_key
+    except Exception:
+        logger.warning("tracing_unavailable", extra={"error_code": "tracing_initialization"})
 
 
 def get_callbacks() -> list:
-    """Initialize only on opt-in, never fall back to a cloud endpoint."""
-    global _client
-    if os.getenv("LANGFUSE_TRACING_ENABLED", "false").lower() != "true":
-        return []
-    if not all(os.getenv(key) for key in (
-        "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_BASE_URL",
-    )):
-        logger.warning("tracing_unavailable", extra={"error_code": "tracing_configuration"})
+    if _client is None:
         return []
     try:
-        from langfuse import get_client
         from langfuse.langchain import CallbackHandler
 
-        _client = get_client()
-        return [CallbackHandler()]
+        return [CallbackHandler(public_key=_public_key)]
     except Exception:
         logger.warning("tracing_unavailable", extra={"error_code": "tracing_initialization"})
         return []
 
 
 def trace_generation(model: str, prompt: str, system_instruction: str | None, *, name: str = "Gemini"):
-    if _client is None or os.getenv("LANGFUSE_TRACING_ENABLED", "false").lower() != "true":
+    if _client is None:
         return nullcontext(None)
     return _client.start_as_current_observation(
         as_type="generation", name=name, model=model,
@@ -40,7 +52,7 @@ def trace_generation(model: str, prompt: str, system_instruction: str | None, *,
 
 
 def trace_operation(name: str, inputs: dict):
-    if _client is None or os.getenv("LANGFUSE_TRACING_ENABLED", "false").lower() != "true":
+    if _client is None:
         return nullcontext(None)
     return _client.start_as_current_observation(as_type="tool", name=name, input=inputs)
 

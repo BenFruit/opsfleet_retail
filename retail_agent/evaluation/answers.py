@@ -20,7 +20,6 @@ Results go to logs/eval/ (git-ignored). Each run costs real model/BigQuery calls
 import argparse
 import json
 import math
-import os
 import re
 import time
 from datetime import datetime, timezone
@@ -216,22 +215,22 @@ def summarize(records: list[dict]) -> dict:
 
 
 def main(argv=None) -> int:
-    from dotenv import load_dotenv
-
     from retail_agent.bootstrap import build_agent
     from retail_agent.data.bigquery_runner import BigQueryRunner
     from retail_agent.data.query_service import QueryLimits, QueryService
     from retail_agent.llm.client import GeminiClient
     from retail_agent.llm.embeddings import Embedder
     from retail_agent.observability.logging import configure_logging
+    from retail_agent.observability.tracing import configure_tracing, shutdown_tracing
     from retail_agent.schema.service import SchemaService
     from retail_agent.security.access import Entitlements
+    from retail_agent.settings import Settings
     from retail_agent.storage.postgres import connection_factory
 
-    load_dotenv()
+    settings = Settings()
     parser = argparse.ArgumentParser(description="Answer-level agent evaluation")
     parser.add_argument("--cases", type=Path, default=DEFAULT_CASES)
-    parser.add_argument("--manager", default=os.getenv("RETAIL_MANAGER_ID", "manager_a"))
+    parser.add_argument("--manager", default=settings.retail_manager_id)
     parser.add_argument("--access-config", default="access.local.json")
     parser.add_argument("--no-golden", action="store_true", help="baseline without Golden Knowledge")
     parser.add_argument("--no-judge", action="store_true", help="deterministic checks only")
@@ -239,24 +238,24 @@ def main(argv=None) -> int:
     parser.add_argument("--pause", type=float, default=2.0, help="seconds between cases (rate limits)")
     args = parser.parse_args(argv)
 
-    # Reproducibility: the built-in style, no user memory, separate log file.
-    os.environ["PERSONA_GOOGLE_DOC_ID"] = ""
+    # Reproducibility: the built-in style (no persona doc), no user memory, separate log file.
     configure_logging("logs/eval-agent.jsonl")
+    configure_tracing(settings)
     entitlements = Entitlements.from_file(args.access_config)
     allowed = entitlements.brands_for(args.manager)
     cases = [AnswerCase.model_validate(item) for item in json.loads(args.cases.read_text(encoding="utf-8"))]
     if args.only:
         cases = [case for case in cases if case.id in set(args.only)]
 
-    llm = GeminiClient()
-    judge_llm = GeminiClient(model=os.getenv("EVAL_JUDGE_MODEL") or None)
-    runner = BigQueryRunner(project_id=os.getenv("GOOGLE_CLOUD_PROJECT"))
+    llm = GeminiClient.from_settings(settings)
+    judge_llm = GeminiClient.from_settings(settings, model=settings.eval_judge_model)
+    runner = BigQueryRunner(project_id=settings.google_cloud_project)
     records = []
     try:
         schema = SchemaService(runner).load_analysis_schema()
         query_service = QueryService(runner, QueryLimits())
-        connect = connection_factory()
-        embedder = Embedder(llm)
+        connect = connection_factory(settings)
+        embedder = Embedder(llm, settings.reports_embedding_model)
         mode = "baseline" if args.no_golden else "golden"
         for case in cases:
             recorder = RecordingQueryService(query_service)
@@ -264,6 +263,7 @@ def main(argv=None) -> int:
             agent = build_agent(
                 llm, schema, recorder, manager_id=args.manager, entitlements=entitlements,
                 connect=connect, embedder=embedder, golden=not args.no_golden, memory=False,
+                persona_doc_id="", golden_min_similarity=settings.golden_min_similarity,
             )
             started = time.monotonic()
             turn = agent.ask(case.question)
@@ -295,6 +295,7 @@ def main(argv=None) -> int:
             print(f"{'PASS' if not failed else 'FAIL'} {case.id:<28} {seconds:>5}s q={turn.queries} m={turn.model_calls} {scores} {failed or ''}")
             time.sleep(args.pause)
     finally:
+        shutdown_tracing()
         llm.close()
         judge_llm.close()
         runner.client.close()

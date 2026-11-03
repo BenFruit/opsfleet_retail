@@ -100,9 +100,9 @@ def bigquery_dry_run(trios: list[GoldenTrio], runner) -> list[str]:
 
 
 def main(argv=None) -> int:
-    from dotenv import load_dotenv
+    from retail_agent.settings import Settings
 
-    load_dotenv()
+    settings = Settings()
     parser = argparse.ArgumentParser(description="Validate and index the Golden Knowledge bucket")
     parser.add_argument("--bucket", type=Path, default=DEFAULT_BUCKET)
     parser.add_argument("--check-only", action="store_true", help="validate files only; no network calls")
@@ -114,7 +114,7 @@ def main(argv=None) -> int:
         if args.bigquery_dry_run:
             from retail_agent.data.bigquery_runner import BigQueryRunner
 
-            failures = bigquery_dry_run(trios, BigQueryRunner())
+            failures = bigquery_dry_run(trios, BigQueryRunner(project_id=settings.google_cloud_project))
             if failures:
                 print("BigQuery dry run failed:\n- " + "\n- ".join(failures))
                 return 1
@@ -126,9 +126,10 @@ def main(argv=None) -> int:
         from retail_agent.llm.embeddings import Embedder
         from retail_agent.storage.postgres import golden_ingest_connection_factory
 
-        llm = GeminiClient()
+        llm = GeminiClient.from_settings(settings)
         try:
-            plan = ingest(trios, GoldenRepository(golden_ingest_connection_factory()), Embedder(llm))
+            plan = ingest(trios, GoldenRepository(golden_ingest_connection_factory(settings)),
+                          Embedder(llm, settings.reports_embedding_model))
         finally:
             llm.close()
         print(f"Indexed: {len(plan.upserts)} new/changed, {len(plan.unchanged)} unchanged, {len(plan.remove)} removed.")

@@ -1,19 +1,19 @@
 import argparse
 import logging
-import os
 
-from dotenv import load_dotenv
+from pydantic import ValidationError
 
 from retail_agent.agent.orchestrator import AnalyticalAgent
-from retail_agent.bootstrap import build_agent, golden_retrieval_enabled
+from retail_agent.bootstrap import build_agent
 from retail_agent.data.bigquery_runner import BigQueryRunner
 from retail_agent.data.query_service import QueryLimits, QueryService
 from retail_agent.llm.client import GeminiClient
 from retail_agent.llm.embeddings import Embedder
 from retail_agent.observability.logging import configure_logging
-from retail_agent.observability.tracing import shutdown_tracing
+from retail_agent.observability.tracing import configure_tracing, shutdown_tracing
 from retail_agent.schema.service import SchemaService
 from retail_agent.security.access import Entitlements
+from retail_agent.settings import Settings, invalid_settings
 from retail_agent.storage.postgres import connection_factory
 
 
@@ -63,10 +63,14 @@ def run_chat(agent: AnalyticalAgent) -> None:
 
 
 def main() -> int:
-    load_dotenv()
+    try:
+        settings = Settings()
+    except ValidationError as error:
+        print(invalid_settings(error))
+        return 1
     parser = argparse.ArgumentParser(description="Brand-scoped retail analysis chat")
-    parser.add_argument("--project", default=os.getenv("GOOGLE_CLOUD_PROJECT"))
-    parser.add_argument("--manager", default=os.getenv("RETAIL_MANAGER_ID", "manager_a"))
+    parser.add_argument("--project", default=settings.google_cloud_project)
+    parser.add_argument("--manager", default=settings.retail_manager_id)
     parser.add_argument("--access-config", default="access.local.json")
     parser.add_argument("--log-file", default="logs/agent.jsonl")
     parser.add_argument("--min-cohort-size", type=int, default=5)
@@ -82,22 +86,25 @@ def main() -> int:
         stage = "access_config"
         entitlements = Entitlements.from_file(args.access_config)
         entitlements.brands_for(args.manager)  # Fail fast for an unknown identity.
-        for name in ("GEMINI_API_KEY", "GEMINI_MODEL"):
-            if not os.getenv(name):
+        for name, value in (("GEMINI_API_KEY", settings.gemini_api_key), ("GEMINI_MODEL", settings.gemini_model)):
+            if not value:
                 print(f"Set {name} in your .env before starting the chat.")
                 return 1
+        configure_tracing(settings)
         stage = "gemini_client"
-        llm = GeminiClient()
+        llm = GeminiClient.from_settings(settings)
         stage = "bigquery_client"
         runner = BigQueryRunner(project_id=args.project)
         stage = "bigquery_schema"
         schema = SchemaService(runner).load_analysis_schema()
         stage = "agent_init"
-        golden = golden_retrieval_enabled()
+        golden = settings.golden_retrieval_enabled
         agent = build_agent(
             llm, schema, QueryService(runner, QueryLimits(minimum_cohort_size=args.min_cohort_size)),
             manager_id=args.manager, entitlements=entitlements,
-            connect=connection_factory(), embedder=Embedder(llm), golden=golden, memory=True,
+            connect=connection_factory(settings), embedder=Embedder(llm, settings.reports_embedding_model),
+            golden=golden, memory=True, persona_doc_id=settings.persona_google_doc_id,
+            golden_min_similarity=settings.golden_min_similarity,
         )
         logger.info("startup_completed", extra={
             "model": llm.model, "fallback": llm.fallback_model is not None, "status": "golden_on" if golden else "golden_off",

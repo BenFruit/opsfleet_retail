@@ -5,7 +5,6 @@ the model requires re-embedding every store (see golden.ingest for the index).
 """
 
 import math
-import os
 
 from google.genai import types
 
@@ -31,9 +30,9 @@ def vector_literal(values: list[float]) -> str:
 
 
 class Embedder:
-    def __init__(self, gemini_client):
+    def __init__(self, gemini_client, model: str = "gemini-embedding-2"):
         self.client = gemini_client.client
-        self.model = os.getenv("REPORTS_EMBEDDING_MODEL", "gemini-embedding-2")
+        self.model = model
         if self.model != "gemini-embedding-2":
             raise ValueError("This MVP supports gemini-embedding-2 only; changing models needs reindexing")
 

@@ -15,6 +15,7 @@ from retail_agent.presentation import render_reports
 from retail_agent.reports.service import ReportLibrary
 from retail_agent.safety.result_guard import ResultGuardError
 from retail_agent.security.access import Entitlements
+from retail_agent.settings import Settings
 from retail_agent.storage.postgres import connection_factory
 from demo_access import DEMO_ENTITLEMENTS
 
@@ -260,8 +261,7 @@ class EmbeddingTests(unittest.TestCase):
     def test_google_request_format_dimensions_and_size_guard(self):
         gemini = Mock()
         gemini.client.models.embed_content.return_value = SimpleNamespace(embeddings=[SimpleNamespace(values=VECTOR)])
-        with patch.dict(os.environ, {"REPORTS_EMBEDDING_MODEL": "gemini-embedding-2"}):
-            embedder = Embedder(gemini)
+        embedder = Embedder(gemini)
         self.assertEqual(embedder.embed("document", document=True, title="Title"), VECTOR)
         call = gemini.client.models.embed_content.call_args.kwargs
         self.assertEqual(call["contents"], "title: Title | text: document")
@@ -275,7 +275,7 @@ class EmbeddingTests(unittest.TestCase):
 @unittest.skipUnless(os.getenv("RETAIL_TEST_POSTGRES") == "1", "Opt-in local pgvector integration test")
 class ReportPostgresTests(unittest.TestCase):
     def test_real_storage_owner_scope_search_and_frozen_delete(self):
-        repo = ReportRepository(connection_factory())
+        repo = ReportRepository(connection_factory(Settings()))
         owner = "test_" + uuid4().hex
         brands = ["Demo Brand"]
         ids = [uuid4().hex for _ in range(3)]

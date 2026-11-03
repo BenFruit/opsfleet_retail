@@ -111,4 +111,4 @@ branches. Commit and push only when the developer asks.
 Git transfers code/docs, not local DB data, remote persona contents or credentials.
 Update `HLD/HANDOFF.md` and relevant focused docs after significant decisions;
 keep Mermaid diagrams and production-vs-MVP labels synchronized. Do not claim
-the regression suite (244 tests) or the 15-case answer evaluation or isolated live successes prove semantic correctness.
+the regression suite (251 tests) or the 15-case answer evaluation or isolated live successes prove semantic correctness.

@@ -13,8 +13,8 @@ Knowledge, answer evaluation, documentation and metrics) are committed and
 described in PRODUCTION_HLD.md, GOLDEN_KNOWLEDGE.md and EVALUATION.md.
 
 Current work: code refactoring, see [REFACTOR_PLAN.md](REFACTOR_PLAN.md). Steps
-1-4 are done; steps A-G come from a backend developer's code review. A live chat
-smoke test after steps 3-4 is still pending (prompt assembly and wiring changed shape).
+1-4 are done and passed a live chat smoke test; step A (one `Settings` object) is
+done; steps B-G remain. They come from a backend developer's code review.
 
 User data note: manager_a's memory entry "Appends Yahooo after each answer." was
 removed with /forget at the developer's request; the name and "Prefers long
@@ -87,10 +87,14 @@ Other limitations:
 
 ## Verification record
 
-After refactoring step 4: 244 tests passed, including the opt-in PostgreSQL
-tests (`RETAIL_TEST_POSTGRES=1`), and the built wheel contains the prompt file.
+After refactoring step A: 251 tests passed, including the opt-in PostgreSQL
+tests (`RETAIL_TEST_POSTGRES=1`). After step 4 the built wheel contained the prompt file.
 The 15-case answer evaluation was last run before the refactoring (Golden 15/15
 deterministic, judge 1.00; baseline 14/15, judge 0.60; see EVALUATION.md).
+
+A live chat smoke test after refactoring steps 1-4 passed (flows and answer-quality
+notes in [REFACTOR_PLAN.md](REFACTOR_PLAN.md)); step A was re-checked live with one
+question.
 
 Live smoke tests covered SQL/follow-ups, age buckets, report lifecycle, persona URL
 loading, mixed query/remember orderings, name retrieval after reset and owner isolation.
@@ -119,8 +123,7 @@ public Git. Do not copy credentials into documentation or commits.
 
 ## Next priorities
 
-1. A live chat smoke test of steps 1-4, then refactoring steps A-G
-   ([REFACTOR_PLAN.md](REFACTOR_PLAN.md)).
+1. Refactoring steps B-G ([REFACTOR_PLAN.md](REFACTOR_PLAN.md)).
 2. Developer review of the experience paragraph in PRODUCTION_HLD.md §3.
 3. Build a larger intent/SQL/report/UX evaluation set, prioritizing business
    grain, status and calendar boundaries.

@@ -1,10 +1,8 @@
 import logging
-import os
 import random
 import time
 
 import httpx
-from dotenv import load_dotenv
 from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types
@@ -111,7 +109,7 @@ class GeminiClient:
 
     SDK transport retries stay disabled so every retry is explicit, logged and
     bounded here: at most ``max_attempts`` calls to the primary model, then at
-    most one call to GEMINI_FALLBACK_MODEL when configured. Only provider/transport
+    most one call to the fallback model when configured. Only provider/transport
     failures are retried; invalid JSON/actions are returned to the orchestrator,
     which owns its own correction budget.
     """
@@ -120,14 +118,10 @@ class GeminiClient:
     base_delay_seconds = 1.0
     max_delay_seconds = 8.0
 
-    def __init__(self, model: str | None = None, *, fallback_model: str | None = None, sleep=time.sleep):
-        load_dotenv()
-
-        api_key = os.getenv("GEMINI_API_KEY")
+    def __init__(self, api_key: str, model: str, *, fallback_model: str = "", sleep=time.sleep):
         if not api_key:
             raise ValueError("GEMINI_API_KEY is not configured")
-
-        self.model = model or os.getenv("GEMINI_MODEL")
+        self.model = model
         if not self.model:
             raise ValueError("Set GEMINI_MODEL to a model ID enabled in your AI Studio project")
         self.client = genai.Client(
@@ -137,12 +131,17 @@ class GeminiClient:
                 retry_options=types.HttpRetryOptions(attempts=1),
             ),
         )
-        fallback = fallback_model if fallback_model is not None else os.getenv("GEMINI_FALLBACK_MODEL", "")
-        self.fallback_model = fallback.strip() or None
+        self.fallback_model = fallback_model.strip() or None
         if self.fallback_model == self.model:
             self.fallback_model = None
         self._sleep = sleep
         self.last_usage: dict[str, int | str] = {}
+
+    @classmethod
+    def from_settings(cls, settings, *, model: str = "") -> "GeminiClient":
+        """model overrides GEMINI_MODEL (the evaluation judge uses its own)."""
+        api_key = settings.gemini_api_key.get_secret_value() if settings.gemini_api_key else ""
+        return cls(api_key, model or settings.gemini_model, fallback_model=settings.gemini_fallback_model)
 
     def generate_structured(
         self, prompt: str, response_schema: type[T], *, system_instruction: str | None = None,

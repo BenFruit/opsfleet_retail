@@ -10,9 +10,9 @@ dependencies = [
     "langgraph>=1.2.18",
     "langfuse>=3.0,<6",
     "pydantic>=2.14.1",
-    "python-dotenv>=1.2.4",
     "psycopg[binary]>=3.2,<4",
     "sqlglot>=30.25.0",
+    "pydantic-settings>=2.16.2",
 ]
 [build-system]
 requires = ["hatchling"]
