@@ -94,6 +94,11 @@ intentional localhost-only values, not production secrets. Prefer `python -B` fo
 checks. Historical tracked bytecode has been removed from the index (local files
 preserved); do not force-add ignored generated files.
 
+Commits (developer's rule): every commit is authored by the developer only. No
+`Co-Authored-By`, session links or other AI/tool attribution trailers in commit
+messages or PR descriptions. Commit on the current branch; never create new
+branches. Commit and push only when the developer asks.
+
 Git transfers code/docs, not local DB data, remote persona contents or credentials.
 Fresh-machine setup and assessment-quality evaluation remain explicit next steps.
 Update `HLD/HANDOFF.md` and relevant focused docs after significant decisions;
