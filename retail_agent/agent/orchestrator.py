@@ -14,11 +14,14 @@ from retail_agent.memory.models import UserMemoryError
 from retail_agent.observability.tracing import get_callbacks, trace_operation
 from retail_agent.reports.models import ReportError
 from retail_agent.reports.service import render_reports
+from retail_agent.safety.grounding import ungrounded_figures
 from retail_agent.safety.result_guard import ResultGuardError, check_text, make_observation, remove_markdown_tables, render_observation
 from retail_agent.security.access import get_allowed_brands
 
 
 logger = logging.getLogger(__name__)
+# Controller feedback that is not a failed query (must not count as one).
+_FEEDBACK_CODES = {"model_invalid_action", "model_invalid_json", "repair_required", "ungrounded_numbers"}
 
 
 class AnalyticalAgent:
@@ -165,7 +168,7 @@ class AnalyticalAgent:
             "observations": result["observations"][-2:],
         }
         if not result["report_calls"] and (not result["memory_calls"] or result["queries"]) and result["action"] is not None and result["action"].action == "answer":
-            query_errors = [item for item in result["observations"] if item["status"] == "error" and item.get("code") not in {"model_invalid_action", "model_invalid_json"}]
+            query_errors = [item for item in result["observations"] if item["status"] == "error" and item.get("code") not in _FEEDBACK_CODES]
             if not query_errors or any(item["status"] == "ok" for item in result["observations"]):
                 self.last_answer = result["answer"]
                 self.last_answer_brands = list(self.allowed_brands)
@@ -248,7 +251,7 @@ class AnalyticalAgent:
         if action.action == "answer":
             checked = [item for item in state["observations"] if item["status"] in {"ok", "empty"}]
             report_results = [item for item in state["observations"] if item["status"] == "report"]
-            query_failures = [item for item in state["observations"] if item["status"] == "error" and item.get("code") not in {"model_invalid_action", "model_invalid_json"}]
+            query_failures = [item for item in state["observations"] if item["status"] == "error" and item.get("code") not in _FEEDBACK_CODES]
             if query_failures and not checked and not report_results:
                 # A premature final answer is not a replacement for repairing
                 # the failed SQL. Use the two bounded repair opportunities.
@@ -260,9 +263,33 @@ class AnalyticalAgent:
                 # fresh results (including "I will fetch it" placeholder answers).
                 update["answer"] = self._partial(state, "No new query completed successfully.")
             else:
+                prose = remove_markdown_tables(action.answer) if checked else action.answer
+                ungrounded = []
+                if checked and not report_results:
+                    # Follow-ups may legitimately quote numbers checked in earlier turns.
+                    evidence = checked + [item for turn in state["history"] for item in turn.get("observations", [])]
+                    ungrounded = ungrounded_figures(prose, evidence, context=state["question"])
+                can_repair = (state["action_retries"] < self.limits.max_action_retries
+                              and state["model_calls"] + 1 < self.limits.max_model_calls)
+                if ungrounded:
+                    logger.warning("answer_ungrounded_figures", extra={
+                        "turn_id": state["turn_id"], "row_count": len(ungrounded),
+                        "status": "repair" if can_repair else "noted",
+                    })
+                    # One bounded self-correction: compute totals in SQL instead of in prose.
+                    if can_repair:
+                        return {**update, "action": None, "action_retries": state["action_retries"] + 1,
+                                "observations": [*state["observations"], {"status": "error", "code": "ungrounded_numbers",
+                                "message": f"These figures in your prose do not match any checked value or the sum/difference of two: {', '.join(ungrounded[:10])}. "
+                                           "Do not add up or average many rows in prose. Run a query that computes the total/average, "
+                                           "or quote only checked values, then answer again."}]}
                 update["answer"] = action.answer
                 if checked:
-                    update["answer"] = remove_markdown_tables(action.answer) or "Here are the checked results."
+                    update["answer"] = prose or "Here are the checked results."
+                if ungrounded:
+                    update["answer"] += ("\n\nNote: these figures in the summary could not be matched to the checked "
+                                         f"results and may be miscalculated: {', '.join(ungrounded[:10])}. Rely on the tables.")
+                if checked:
                     update["answer"] += (
                         f"\n\nScope: authorized brands only (configured: {self.authorized_brand_count})."
                         "\n\nChecked query results:\n" + "\n\n".join(
@@ -407,7 +434,7 @@ class AnalyticalAgent:
     def _partial(state: AgentState, reason: str) -> str:
         successes = [item for item in state["observations"] if item["status"] == "ok"]
         text = f"I could not fully complete the analysis. {reason}"
-        failures = [item for item in state["observations"] if item["status"] == "error" and item.get("code") != "repair_required"]
+        failures = [item for item in state["observations"] if item["status"] == "error" and item.get("code") not in _FEEDBACK_CODES]
         if failures:
             last = failures[-1]
             text += f"\nLast query issue: [{last['code']}] {last['message']}"

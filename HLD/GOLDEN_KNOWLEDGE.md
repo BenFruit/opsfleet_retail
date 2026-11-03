@@ -62,8 +62,11 @@ data, repeat purchases in consecutive months are rare, so the v1 method carries
 no signal. That is exactly the feedback the loop exists for. The trio was revised
 to v2: it keeps the definition but tells the agent to say the signal is weak and
 pivot to active buyers and returning-buyer share. Re-ingestion re-embedded only
-that trio. In production the same path starts from flagged conversations, not
-from the developer noticing (see "System learning" below).
+that trio. The answer evaluation later found a second case: the quarterly report
+added category rows up in prose and got the total wrong, so
+`quarterly-business-review` v2 asks for a separate totals query (EVALUATION.md).
+In production the same path starts from flagged conversations and evaluation
+failures, not from the developer noticing (see "System learning" below).
 
 ## Query-time retrieval
 

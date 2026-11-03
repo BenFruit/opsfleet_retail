@@ -1,6 +1,6 @@
 {
   "id": "quarterly-business-review",
-  "version": 1,
+  "version": 2,
   "status": "approved",
   "question": "Create a report for Q1 including insights and action items for Q2.",
   "paraphrases": [
@@ -8,7 +8,7 @@
     "Q3 report with recommendations",
     "Сделай отчёт за квартал с рекомендациями"
   ],
-  "interpretation": "A quarter is a calendar quarter of the current year unless the user names a year; if it is not complete yet, say so and use the last complete quarter. A good report needs several queries: KPI by month inside the quarter versus the previous quarter, category mix and returns. Structure: executive summary, KPIs, drivers, risks, actions for the next quarter with owners. Separate evidence from hypotheses.",
+  "interpretation": "A quarter is a calendar quarter of the current year unless the user names a year; if it is not complete yet, say so and use the last complete quarter. A good report needs several queries: KPI by month inside the quarter versus the previous quarter, category mix and returns. Structure: executive summary, KPIs, drivers, risks, actions for the next quarter with owners. Separate evidence from hypotheses. Get quarter totals (revenue, orders, buyers) from a separate query without the category breakdown; never add category rows together in prose, because orders and buyers are not additive across categories and mental sums are error-prone.",
   "metric_definitions": [
     "completed_revenue, orders, buyers, avg_order_value per month",
     "quarter_over_quarter_change = (quarter - previous_quarter) / previous_quarter",
@@ -26,5 +26,5 @@
   ],
   "provenance": "synthetic-reviewed",
   "reviewer": "yerassyl.pirzhanov",
-  "approved_at": "2026-11-03T00:00:00Z"
+  "approved_at": "2026-11-03T07:30:00Z"
 }

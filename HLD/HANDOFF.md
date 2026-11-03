@@ -30,6 +30,14 @@ expected trio. `customer-churn-proxy` was revised to v2 after the live run.
 The configured Google Doc persona currently appends "Yahooo" to answers: test
 content to remove before the demo. ADC lacks a quota project (warning only).
 
+Fix batch 3 (answer evaluation, uncommitted): `retail_agent/evaluation/answers.py`
+and `evals/answer_cases.json` (15 live cases, reference SQL, LLM judge, A/B with
+and without Golden); numeric grounding check in the agent (`safety/grounding.py`)
+with one SQL correction or a visible note; prompt rule against prose arithmetic;
+`quarterly-business-review` v2. Live result: Golden 15/15 deterministic, judge
+1.00; baseline 14/15, judge 0.60. The judge missed a wrong prose total; numeric
+faithfulness is therefore deterministic. Details in EVALUATION.md.
+
 Older `model_failed` codes in existing local logs predate error classification;
 current failures are classified. No commit or push has been authorized.
 
@@ -144,8 +152,8 @@ public Git. Do not copy credentials into documentation or commits.
 3. Reproduce setup on a clean computer and record failures honestly.
 4. Build a small intent/SQL/report/UX evaluation dataset and test the production-design
    assumptions, prioritizing business grain, status and calendar boundaries.
-5. Done: Golden Knowledge seed set and retrieval (GOLDEN_KNOWLEDGE.md). Next: answer-level
-   evaluation set, framework/experience section, diagrams and documentation condensation.
+5. Done: Golden Knowledge (GOLDEN_KNOWLEDGE.md) and answer evaluation (EVALUATION.md).
+   Next: framework/experience section, production diagrams, documentation condensation.
 6. Before real data use: trace redaction, authenticated access/data-layer isolation,
    secret management, backups and stronger adversarial/privacy evaluation.
 

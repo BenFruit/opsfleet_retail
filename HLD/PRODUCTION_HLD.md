@@ -15,7 +15,7 @@ not unsupported causal certainty. See task.txt and STAKEHOLDER_POLICY.md.
 | User learning | Explicit short memories with embeddings and full bounded context | Consent-aware selective retrieval and correction lifecycle |
 | System learning | Tests and manual prompt changes | Reviewed offline improvement and staged release |
 | Resilience | Bounded repairs/costs, safe errors, optional-service degradation | Deadlines, cancellation, admission control, outage isolation |
-| QA/UX | Regression suite and isolated live smoke tests | Intent/report evaluation, usability studies and release gates |
+| QA/UX | 236 tests, retrieval eval, 15-case live answer eval with reference SQL, numeric grounding and LLM judge, Golden A/B (EVALUATION.md) | 100-300 stratified cases, repeated runs, calibrated judge, usability studies, release gates |
 | Observability | Safe JSON logs; optional raw local Langfuse | Sanitized traces, dashboards, SLOs and alerts |
 | Persona agility | Style-only public-link Google Doc | Authenticated versioned admin console and rollback |
 
@@ -228,6 +228,10 @@ outage leaves analysis available but cannot claim saves/deletes succeeded. Durab
 job IDs/idempotency let operators resolve uncertain outcomes before retrying.
 
 ## 9. Evaluation and UX release gates
+
+The prototype implements a first version of this section (retrieval evaluation,
+answer evaluation with reference numbers, grounding and a judge, and a Golden A/B);
+see EVALUATION.md for the method, results and findings.
 
 Build a versioned dataset with questions, authorized scope, fixed data fixtures or
 snapshot dates, expected metrics/grain/status/date windows, acceptable SQL/result

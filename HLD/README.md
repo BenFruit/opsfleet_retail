@@ -13,6 +13,7 @@ Root [AGENTS.md](../AGENTS.md) contains repository working instructions;
 - [SAVED_REPORTS.md](SAVED_REPORTS.md): snapshot storage, search and strict deletion confirmation.
 - [USER_MEMORY.md](USER_MEMORY.md): explicit persistence, embeddings, known failures and future retrieval.
 - [GOLDEN_KNOWLEDGE.md](GOLDEN_KNOWLEDGE.md): trio format, ingestion/update loop, retrieval and calibration.
+- [EVALUATION.md](EVALUATION.md): answer/retrieval evaluation, A/B results, findings and release gates.
 - [PERSONA_MANAGEMENT.md](PERSONA_MANAGEMENT.md): Google Doc MVP and proposed admin workflow.
 - [OBSERVABILITY_AND_ACCESS.md](OBSERVABILITY_AND_ACCESS.md): local tracing and deferred privacy/access work.
 

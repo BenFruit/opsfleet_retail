@@ -507,6 +507,30 @@ carries the `query_id`. Filter by `turn_id` to see one question end-to-end:
 Select-String -Path logs/agent.jsonl -Pattern '"turn_id": "TURN_ID"'
 ```
 
+## Evaluating answer quality
+
+`evals/answer_cases.json` holds 15 cases (analytics, reports, UX, safety). The
+harness runs them through the real agent, records executed SQL and checked rows,
+and applies deterministic checks (reference numbers from reviewed SQL under the
+same brand scope, required/forbidden SQL, numeric grounding of prose, PII/refusal/
+access patterns) plus an advisory LLM judge. It costs real model and BigQuery calls.
+
+```powershell
+uv run python -m retail_agent.evaluation.answers               # Golden Knowledge on
+uv run python -m retail_agent.evaluation.answers --no-golden   # baseline for A/B
+uv run python -m retail_agent.evaluation.answers --only quarterly-report --no-judge
+```
+
+Results are printed and saved to `logs/eval/` (git-ignored). Latest run: 15/15
+deterministic and 100% judge pass with Golden Knowledge, versus 14/15 and 60%
+without. Method, findings and limits: [HLD/EVALUATION.md](HLD/EVALUATION.md).
+
+The agent itself also checks **numeric grounding**: money/count figures in the
+model's prose must equal a checked value or the sum/difference of two; otherwise
+the model gets one correction ("compute the total with a query"), and if that
+fails the answer carries a visible note. This was added after the evaluation
+caught a quarterly total that the model had added up wrongly in prose.
+
 ## Tests
 
 ```powershell
@@ -524,7 +548,7 @@ docker compose config --quiet
 git diff --check
 ```
 
-The most recent run passed 221 tests including the opt-in local PostgreSQL cases
+The most recent run passed 236 tests including the opt-in local PostgreSQL cases
 (3 are skipped without `RETAIL_TEST_POSTGRES=1`).
 Default tests skip opt-in DB cases. Test fixtures use temporary owners and clean
 up only their own records. Model-based extraction/formatting and complete semantic
