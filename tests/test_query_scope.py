@@ -150,7 +150,7 @@ class QueryScopeTests(unittest.TestCase):
             "orders": [{"name": "order_id", "type": "INT64"}, {"name": "num_of_item", "type": "INT64"}],
             "users": [{"name": "email", "type": "STRING"}, {"name": "age", "type": "INT64"}],
         }
-        visible = Analyst(Mock(), schema, persona_provider=Mock()).schema
+        visible = Analyst(Mock(), schema, persona_style=Mock()).schema
         self.assertEqual({t: [c["name"] for c in cols] for t, cols in visible.items()},
                          {"orders": ["order_id"], "users": ["age"]})
 

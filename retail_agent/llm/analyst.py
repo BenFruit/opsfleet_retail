@@ -4,7 +4,7 @@ from importlib.resources import files
 
 from retail_agent.agent.models import AgentAction
 from retail_agent.llm.client import GeminiClient
-from retail_agent.llm.persona import PersonaProvider
+from retail_agent.llm.persona import PersonaStyle
 from retail_agent.schema.catalog import TABLE_POLICIES
 from retail_agent.schema.models import DataAccessLevel
 
@@ -19,10 +19,10 @@ SYSTEM_INSTRUCTION = files("retail_agent.llm").joinpath("prompts/analyst_policy.
 
 
 class Analyst:
-    def __init__(self, llm: GeminiClient, schema: dict[str, list[dict]], *, persona_provider: PersonaProvider | None = None):
+    def __init__(self, llm: GeminiClient, schema: dict[str, list[dict]], *, persona_style: PersonaStyle | None = None):
         self.llm = llm
-        self.persona_provider = persona_provider if persona_provider is not None else PersonaProvider()
-        self.persona = self.persona_provider.current
+        self.persona_style = persona_style if persona_style is not None else PersonaStyle()
+        self.persona = self.persona_style.current
         # Aggregate-only names are useful planning metadata; values stay guarded.
         self.schema = {
             table: [
@@ -37,7 +37,7 @@ class Analyst:
 
     def refresh_persona(self) -> None:
         # Called once per user turn; all model/tool steps keep the same snapshot.
-        self.persona = self.persona_provider.load()
+        self.persona = self.persona_style.refresh()
 
     def decide(self, *, question, history, observations, budget, access_context=None, session_context=None, user_memory=None, golden=None) -> AgentAction:
         prompt = json.dumps({

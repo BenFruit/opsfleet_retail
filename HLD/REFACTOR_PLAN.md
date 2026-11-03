@@ -66,7 +66,15 @@ check passes); the `remember` turn also restated the previous answer.
   and owns the stage-tagged failure handling that the mutable `stage` variable
   and one large try/except did before. Error codes, messages, stages and log
   events are unchanged; a new test checks the stage tag in both the error and
-  the `query_failed` log for every stage. 257 tests pass.
+  the `query_failed` log for every stage. 257 tests pass. Commit `9a90b53`.
+- **E. Persona.** `PersonaProvider` is split into `GoogleDocReader` (ID parsing,
+  export URL, timeout, content-type and size checks; failures become
+  `DocumentReadError` with the same `persona_*` codes) and `PersonaStyle`
+  (current style, last-good fallback, `persona_loaded`/`persona_load_failed`
+  logs). `parse_google_doc_id` is a function; the built-in style moved to
+  `llm/prompts/default_style.md` with identical text (version hash
+  `4a007cf25a0a` is asserted) and ships in the wheel. `build_agent` creates a
+  reader only when a document is configured. 260 tests pass.
 
 ## Review findings (backend developer, 3 November) still open
 
@@ -111,7 +119,7 @@ Closed by steps 1-4: 3 (commands extracted), 6 (prompt in a file),
   classifier; remove the static helpers listed above. Findings 5, 7, 8.
 - ~~D. `QueryService.execute` as explicit stages~~ (done above) (authorize, validate,
   dry run, execute, guard) with unchanged error codes. Finding 4.
-- **E. Persona.** Split Google Doc reading from current-style tracking,
+- ~~E. Persona~~ (done above). Split Google Doc reading from current-style tracking,
   rename, `parse_google_doc_id` as a function, default style in
   `llm/prompts/`. Findings 10-12.
 - **F. Memory.** One limit constant, docstrings. Findings 14, 15.

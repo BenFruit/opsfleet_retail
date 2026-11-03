@@ -24,7 +24,8 @@ Reading order:
   loop, nodes, budgets), `answer.py` (final-answer checks and repair feedback),
   `commands.py` (exact slash commands, no model), `conversation.py` (history).
 - `retail_agent/llm/`: direct Gemini SDK, `errors.py` (table-driven failure codes and
-  empty-response reasons), shared `Embedder`, analyst, style loader;
+  empty-response reasons), shared `Embedder`, analyst, `persona.py` (`GoogleDocReader`
+  fetches the style doc, `PersonaStyle` keeps current/fallback style);
   the mandatory policy prompt is `llm/prompts/analyst_policy.md`.
 - `retail_agent/bootstrap.py`: agent wiring shared by the chat application and answer
   evaluation. `retail_agent/presentation.py`: user-facing Markdown rendering.
@@ -115,4 +116,4 @@ branches. Commit and push only when the developer asks.
 Git transfers code/docs, not local DB data, remote persona contents or credentials.
 Update `HLD/HANDOFF.md` and relevant focused docs after significant decisions;
 keep Mermaid diagrams and production-vs-MVP labels synchronized. Do not claim
-the regression suite (257 tests) or the 15-case answer evaluation or isolated live successes prove semantic correctness.
+the regression suite (260 tests) or the 15-case answer evaluation or isolated live successes prove semantic correctness.

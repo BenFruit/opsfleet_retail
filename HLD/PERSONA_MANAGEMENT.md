@@ -14,8 +14,10 @@ Dynamic values (question, schema, brand entitlements, history, observations and
 budgets) remain structured runtime context. There is no template interpolation
 of document contents, no executable code and no credentials in the document.
 
-`llm/persona.py` fetches the configured Google document as plain text at the start
-of each accepted question, once per turn. All subsequent plan/query/report/remember/model
+`llm/persona.py` has two parts: `GoogleDocReader` fetches the configured Google
+document as bounded plain text, and `PersonaStyle` keeps the current style, falling
+back to the last good version or the built-in default (`llm/prompts/default_style.md`).
+The document is read at the start of each accepted question, once per turn. All subsequent plan/query/report/remember/model
 steps retain that immutable snapshot. Changes take effect on the NEXT question
 without restarting/redeploying the application. Existing reports are unchanged;
 opening a saved document prints its stored content, not a newly styled rewrite.
