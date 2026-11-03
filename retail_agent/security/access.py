@@ -30,10 +30,3 @@ def get_allowed_brands(manager_id: str) -> frozenset[str]:
         return brands_allowed
     else:
         raise PermissionError("No authorized brands for this manager")
-
-if __name__ == "__main__":
-    for manager_id in ["manager_a", "manager_b", "manager_empty", "unknown"]:
-        try:
-            print(manager_id, "->", get_allowed_brands(manager_id))
-        except PermissionError as error:
-            print(manager_id, "-> denied:", error)

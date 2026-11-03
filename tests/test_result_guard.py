@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from retail_agent.data.query_service import QueryResult
 from retail_agent.safety.result_guard import ResultGuardError, check_text, make_observation, render_observation
-from retail_agent.safety.sql_validator import validate_sql
+from retail_agent.safety.sql_validator import validate_query
 
 
 SQL = "SELECT p.name FROM `bigquery-public-data.thelook_ecommerce.products` AS p"
@@ -108,7 +108,7 @@ class ResultGuardTests(unittest.TestCase):
         self.assertTrue(tree.named_selects[0])
 
     def test_monthly_revenue_and_count_are_supported(self):
-        validate_sql("""
+        validate_query("""
             SELECT DATE_TRUNC(DATE(oi.created_at), MONTH) AS month,
                    SUM(oi.sale_price) AS revenue, COUNT(*) AS units
             FROM `bigquery-public-data.thelook_ecommerce.order_items` AS oi
@@ -117,13 +117,13 @@ class ResultGuardTests(unittest.TestCase):
         """)
 
     def test_output_names_do_not_define_source_column_policy(self):
-        validate_sql("SELECT u.id AS age FROM `bigquery-public-data.thelook_ecommerce.users` AS u GROUP BY age")
+        validate_query("SELECT u.id AS age FROM `bigquery-public-data.thelook_ecommerce.users` AS u GROUP BY age")
         with self.assertRaises(ValueError):
-            validate_sql("SELECT u.age AS id FROM `bigquery-public-data.thelook_ecommerce.users` AS u GROUP BY id")
+            validate_query("SELECT u.age AS id FROM `bigquery-public-data.thelook_ecommerce.users` AS u GROUP BY id")
 
     def test_star_projection_still_rejected(self):
         with self.assertRaises(ValueError):
-            validate_sql("SELECT p.* FROM `bigquery-public-data.thelook_ecommerce.products` AS p")
+            validate_query("SELECT p.* FROM `bigquery-public-data.thelook_ecommerce.products` AS p")
 
 
 if __name__ == "__main__":

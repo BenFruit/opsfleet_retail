@@ -90,7 +90,3 @@ def validate_query(sql: str):
         return tree
     except (ParseError, OptimizeError):
         raise SQLValidationError("SQL cannot be parsed or its columns are unknown/ambiguous") from None
-
-
-def validate_sql(sql: str) -> None:
-    validate_query(sql)

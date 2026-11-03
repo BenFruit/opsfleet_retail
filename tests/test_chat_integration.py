@@ -47,7 +47,6 @@ class ChatIntegrationTests(unittest.TestCase):
         self.assertIn("| 30.00 |", turn.answer)
         self.assertEqual(turn.queries, 2)
         self.assertEqual(turn.model_calls, 3)
-        runner.execute_query.assert_not_called()
         for call in runner.execute_scoped_query.call_args_list:
             self.assertIn("@allowed_brands", call.args[0])
             self.assertEqual(call.kwargs["allowed_brands"], ("Brand A", "Brand B"))

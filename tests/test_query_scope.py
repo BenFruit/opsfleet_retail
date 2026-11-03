@@ -5,7 +5,7 @@ import unittest
 
 from sqlglot import exp, parse_one
 
-from retail_agent.safety.sql_validator import validate_sql
+from retail_agent.safety.sql_validator import validate_query
 from retail_agent.security.access import get_allowed_brands
 from retail_agent.security.query_scope import apply_brand_scope
 
@@ -213,7 +213,7 @@ class QueryScopeTests(unittest.TestCase):
                 apply_brand_scope(sql)
 
     def test_constant_select_is_allowed(self):
-        validate_sql("SELECT 1")
+        validate_query("SELECT 1")
 
     def test_rewriting_twice_is_rejected(self):
         scoped = apply_brand_scope(f"SELECT p.id FROM `{DATASET}.products` AS p")

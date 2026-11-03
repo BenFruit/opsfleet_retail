@@ -144,18 +144,6 @@ class GeminiClient:
         self._sleep = sleep
         self.last_usage: dict[str, int | str] = {}
 
-    def generate(self, prompt: str) -> str:
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.1,
-                max_output_tokens=2048,
-            ),
-        )
-
-        return _response_text(response)
-
     def generate_structured(
         self, prompt: str, response_schema: type[T], *, system_instruction: str | None = None,
     ) -> T:

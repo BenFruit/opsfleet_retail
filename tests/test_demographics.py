@@ -13,7 +13,7 @@ from retail_agent.llm.analyst import Analyst
 from retail_agent.llm.client import GeminiClient
 from retail_agent.safety.demographic_sql import COHORT_COLUMN
 from retail_agent.safety.result_guard import ResultGuardError, make_observation
-from retail_agent.safety.sql_validator import validate_query, validate_sql
+from retail_agent.safety.sql_validator import validate_query
 from retail_agent.schema.catalog import TABLE_POLICIES
 from retail_agent.security.query_scope import apply_brand_scope
 
@@ -125,10 +125,10 @@ class DemographicSQLTests(unittest.TestCase):
         ]
         for sql in queries:
             with self.subTest(sql=sql), self.assertRaises(ValueError):
-                validate_sql(sql)
+                validate_query(sql)
 
     def test_non_demographic_individual_spending_stays_allowed(self):
-        validate_sql(f"SELECT oi.user_id, SUM(oi.sale_price) AS spend FROM `{PATH}.order_items` oi GROUP BY oi.user_id")
+        validate_query(f"SELECT oi.user_id, SUM(oi.sale_price) AS spend FROM `{PATH}.order_items` oi GROUP BY oi.user_id")
 
     def test_second_guard_hides_small_values(self):
         result = QueryResult("id", ({"state": "DO_NOT_PUBLISH", "revenue": 999, COHORT_COLUMN: 1},), False, 1, 1, 1, 5, ("state", "revenue"))
