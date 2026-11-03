@@ -16,6 +16,7 @@ from retail_agent.safety.result_guard import ResultGuardError, make_observation
 from retail_agent.safety.sql_validator import validate_query
 from retail_agent.schema.catalog import TABLE_POLICIES
 from retail_agent.security.query_scope import apply_brand_scope
+from demo_access import DEMO_ENTITLEMENTS
 
 
 PATH = "bigquery-public-data.thelook_ecommerce"
@@ -150,7 +151,7 @@ class DemographicSQLTests(unittest.TestCase):
         runner = Mock(spec=BigQueryRunner)
         runner.dry_run.return_value = 10
         runner.execute_scoped_query.return_value = QueryExecution(({"state": "DO_NOT_PUBLISH", "revenue": 999, COHORT_COLUMN: 1},), False, 10, 10)
-        agent = AnalyticalAgent(Analyst(llm, {}), QueryService(runner, QueryLimits(minimum_cohort_size=6)), manager_id="manager_a")
+        agent = AnalyticalAgent(Analyst(llm, {}), QueryService(runner, QueryLimits(minimum_cohort_size=6)), manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS)
         turn = agent.ask("Which states have the most revenue?")
         prompt = llm.generate_structured.call_args.args[0]
         self.assertNotIn("DO_NOT_PUBLISH", prompt + turn.answer)

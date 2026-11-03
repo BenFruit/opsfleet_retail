@@ -1,13 +1,10 @@
 """Only parameterized library operations; this is NOT an LLM SQL tool."""
 
-import os
 from contextlib import contextmanager
 
-import psycopg
-from psycopg.rows import dict_row
-
-from retail_agent.reports.embeddings import vector_literal
+from retail_agent.llm.embeddings import vector_literal
 from retail_agent.reports.models import ReportError, ReportRequest
+from retail_agent.storage.postgres import StorageError
 
 
 _ACCESS = "owner_id = %s AND brand_scope <@ %s::text[] AND cardinality(brand_scope) > 0"
@@ -15,20 +12,16 @@ _SUMMARY = "report_id, title, conversation_id, created_at"
 
 
 class ReportRepository:
+    def __init__(self, connection_factory):
+        self._connect = connection_factory
+
     @contextmanager
     def connection(self):
+        """Storage failures become ReportError so the library keeps one error contract."""
         try:
-            with psycopg.connect(
-                host=os.getenv("REPORTS_POSTGRES_HOST", "127.0.0.1"),
-                port=int(os.getenv("REPORTS_POSTGRES_PORT", "5433")),
-                dbname=os.getenv("REPORTS_POSTGRES_DATABASE", "retail_agent"),
-                user=os.getenv("REPORTS_POSTGRES_USER", "retail_agent"),
-                password=os.getenv("REPORTS_POSTGRES_PASSWORD", "local-reports-demo"),
-                connect_timeout=3, options="-c statement_timeout=5000 -c timezone=UTC",
-                row_factory=dict_row,
-            ) as conn:
+            with self._connect() as conn:
                 yield conn
-        except (psycopg.Error, ValueError):
+        except StorageError:
             raise ReportError("Report storage is unavailable or an operation failed. No success is confirmed; check the library before retrying a write.") from None
 
     def save(self, *, report_id, owner, brands, conversation_id, title, content, vector, model):

@@ -16,7 +16,8 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from retail_agent.golden.models import GoldenError, GoldenTrio
-from retail_agent.reports.models import ReportError
+from retail_agent.llm.embeddings import EmbeddingError
+from retail_agent.storage.postgres import StorageError
 from retail_agent.safety.result_guard import ResultGuardError, check_text
 from retail_agent.safety.sql_validator import SQLValidationError
 from retail_agent.security.query_scope import apply_brand_scope
@@ -120,18 +121,19 @@ def main(argv=None) -> int:
             print("BigQuery dry run passed for all trios.")
         if args.check_only or args.bigquery_dry_run:
             return 0
-        from retail_agent.golden.repository import GoldenRepository, ingest_connection_factory
+        from retail_agent.golden.repository import GoldenRepository
         from retail_agent.llm.client import GeminiClient
-        from retail_agent.reports.embeddings import ReportEmbedder
+        from retail_agent.llm.embeddings import Embedder
+        from retail_agent.storage.postgres import golden_ingest_connection_factory
 
         llm = GeminiClient()
         try:
-            plan = ingest(trios, GoldenRepository(ingest_connection_factory()), ReportEmbedder(llm))
+            plan = ingest(trios, GoldenRepository(golden_ingest_connection_factory()), Embedder(llm))
         finally:
             llm.close()
         print(f"Indexed: {len(plan.upserts)} new/changed, {len(plan.unchanged)} unchanged, {len(plan.remove)} removed.")
         return 0
-    except (GoldenError, ReportError) as error:
+    except (GoldenError, EmbeddingError, StorageError) as error:
         print(error)
         return 1
 

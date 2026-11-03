@@ -11,7 +11,6 @@ from uuid import uuid4
 from google.api_core import exceptions as google_errors
 
 from retail_agent.data.bigquery_runner import BigQueryRunner
-from retail_agent.security.access import get_allowed_brands
 from retail_agent.security.query_scope import apply_brand_scope
 from retail_agent.safety.sql_validator import SQLValidationError, validate_query
 
@@ -73,10 +72,13 @@ class QueryService:
         self.limits = limits if limits is not None else QueryLimits()
 
     def execute(
-        self, sql: str, *, manager_id: str, scan_budget_bytes: int | None = None,
+        self, sql: str, *, allowed_brands, scan_budget_bytes: int | None = None,
         turn_id: str | None = None,
     ) -> QueryResult:
-        """Use identity supplied by the application, never identity from the LLM.
+        """Run model SQL within the caller's trusted brand entitlements.
+
+        allowed_brands comes from the application's identity/entitlements,
+        never from the model. QueryService does not know about managers.
 
         Errors are safe for caller-controlled handling. No retries or model calls
         occur here. The orchestrator must enforce an additional per-session
@@ -94,10 +96,10 @@ class QueryService:
                 if type(scan_budget_bytes) is not int or scan_budget_bytes <= 0:
                     raise QueryServiceError("cost_limit", "The question scan budget is exhausted.")
                 byte_limit = min(byte_limit, scan_budget_bytes)
-            try:
-                allowed_brands = tuple(sorted(get_allowed_brands(manager_id)))
-            except PermissionError:
-                raise QueryServiceError("access_denied", "No authorized brands for this user.") from None
+            if (isinstance(allowed_brands, str) or not allowed_brands
+                    or any(not isinstance(brand, str) or not brand.strip() for brand in allowed_brands)):
+                raise QueryServiceError("access_denied", "No authorized brands for this user.")
+            allowed_brands = tuple(sorted(allowed_brands))
 
             stage = "validation"
             if not isinstance(sql, str) or len(sql) > self.limits.max_sql_chars:

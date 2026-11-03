@@ -226,11 +226,12 @@ def main(argv=None) -> int:
     from retail_agent.llm.analyst import Analyst
     from retail_agent.llm.client import GeminiClient
     from retail_agent.observability.logging import configure_logging
-    from retail_agent.reports.embeddings import ReportEmbedder
+    from retail_agent.llm.embeddings import Embedder
     from retail_agent.reports.repository import ReportRepository
     from retail_agent.reports.service import ReportLibrary
     from retail_agent.schema.service import SchemaService
-    from retail_agent.security.access import get_allowed_brands, load_brand_access
+    from retail_agent.security.access import Entitlements
+    from retail_agent.storage.postgres import connection_factory
 
     load_dotenv()
     parser = argparse.ArgumentParser(description="Answer-level agent evaluation")
@@ -246,8 +247,8 @@ def main(argv=None) -> int:
     # Reproducibility: the built-in style, no user memory, separate log file.
     os.environ["PERSONA_GOOGLE_DOC_ID"] = ""
     configure_logging("logs/eval-agent.jsonl")
-    load_brand_access(args.access_config)
-    allowed = set(get_allowed_brands(args.manager))
+    entitlements = Entitlements.from_file(args.access_config)
+    allowed = entitlements.brands_for(args.manager)
     cases = [AnswerCase.model_validate(item) for item in json.loads(args.cases.read_text(encoding="utf-8"))]
     if args.only:
         cases = [case for case in cases if case.id in set(args.only)]
@@ -260,15 +261,17 @@ def main(argv=None) -> int:
         schema_service = SchemaService(runner)
         schema = {t: schema_service.get_table_schema(t) for t in ("orders", "order_items", "products", "users")}
         query_service = QueryService(runner, QueryLimits())
-        repository = ReportRepository()
-        embedder = ReportEmbedder(llm)
-        golden = None if args.no_golden else GoldenKnowledge(GoldenRepository(repository.connection), embedder)
+        connect = connection_factory()
+        repository = ReportRepository(connect)
+        embedder = Embedder(llm)
+        golden = None if args.no_golden else GoldenKnowledge(GoldenRepository(connect), embedder)
         mode = "baseline" if args.no_golden else "golden"
         for case in cases:
             recorder = RecordingQueryService(query_service)
             agent = AnalyticalAgent(
-                Analyst(llm, schema), recorder, manager_id=args.manager,
-                reports=ReportLibrary(repository, embedder, manager_id=args.manager), golden=golden,
+                Analyst(llm, schema), recorder, manager_id=args.manager, entitlements=entitlements,
+                reports=ReportLibrary(repository, embedder, manager_id=args.manager, entitlements=entitlements),
+                golden=golden,
             )
             started = time.monotonic()
             turn = agent.ask(case.question)
@@ -277,7 +280,7 @@ def main(argv=None) -> int:
             references = {}
             for ref in case.references:
                 try:
-                    rows = query_service.execute(ref.sql, manager_id=args.manager).rows
+                    rows = query_service.execute(ref.sql, allowed_brands=allowed).rows
                     references[ref.name] = _plain(rows[0][ref.column]) if rows else None
                 except QueryServiceError:
                     references[ref.name] = None

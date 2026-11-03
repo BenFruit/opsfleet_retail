@@ -18,10 +18,14 @@ Reading order:
 
 - `main.py`: startup dependencies and CLI commands.
 - `retail_agent/agent/`: Pydantic actions, limits and LangGraph orchestration.
-- `retail_agent/llm/`: direct Gemini SDK, mandatory analyst instructions, style loader.
+- `retail_agent/llm/`: direct Gemini SDK, shared `Embedder`, mandatory analyst
+  instructions, style loader.
 - `retail_agent/data/`, `schema/`, `safety/`, `security/`: query execution,
-  curated source policy, SQL/result guards and trusted brand rewriting.
-- `retail_agent/reports/`: parameterized repository, embeddings and report lifecycle.
+  curated source policy, SQL/result guards, `Entitlements` (loaded once in
+  `main.py`, passed explicitly) and trusted brand rewriting.
+- `retail_agent/storage/postgres.py`: one PostgreSQL connection factory shared by
+  reports, memory and Golden; driver errors become a fixed `StorageError`.
+- `retail_agent/reports/`: parameterized repository and report lifecycle.
 - `retail_agent/memory/`: bounded explicit owner-scoped persistent entries.
 - `retail_agent/golden/`, `golden/`: Golden Knowledge trios (bucket), ingestion,
   retrieval and retrieval evaluation; the agent role reads the index only.

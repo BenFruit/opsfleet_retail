@@ -15,6 +15,7 @@ from retail_agent.golden.models import GoldenError, GoldenTrio
 from retail_agent.golden.service import GoldenKnowledge
 from retail_agent.llm.analyst import Analyst
 from retail_agent.safety.sql_validator import validate_query
+from demo_access import DEMO_ENTITLEMENTS
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -156,7 +157,7 @@ class GoldenAgentWiringTests(unittest.TestCase):
         golden = Mock()
         golden.retrieve.return_value = {"status": "ready", "items": [{"trio_id": "monthly-revenue-trend"}]}
         with patch("retail_agent.agent.orchestrator.logger"):
-            agent = AnalyticalAgent(analyst, Mock(), manager_id="manager_a", golden=golden)
+            agent = AnalyticalAgent(analyst, Mock(), manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS, golden=golden)
             agent.ask("Revenue by month for our brands")
             agent.ask("and last year?")
         self.assertEqual(analyst.decide.call_args.kwargs["golden"]["items"][0]["trio_id"], "monthly-revenue-trend")
@@ -192,12 +193,11 @@ class GoldenEvaluationMetricTests(unittest.TestCase):
 @unittest.skipUnless(os.getenv("RETAIL_TEST_POSTGRES") == "1", "Opt-in local pgvector integration test")
 class GoldenPostgresTests(unittest.TestCase):
     def test_writer_publishes_reader_searches_and_reader_cannot_write(self):
-        from retail_agent.golden.repository import GoldenRepository, ingest_connection_factory
-        from retail_agent.reports.models import ReportError
-        from retail_agent.reports.repository import ReportRepository
+        from retail_agent.golden.repository import GoldenRepository
+        from retail_agent.storage.postgres import StorageError, connection_factory, golden_ingest_connection_factory
 
-        writer = GoldenRepository(ingest_connection_factory())
-        reader = GoldenRepository(ReportRepository().connection)
+        writer = GoldenRepository(golden_ingest_connection_factory())
+        reader = GoldenRepository(connection_factory())
         test_trio = trio(id="test-" + uuid4().hex[:12])
         try:
             writer.publish(upserts=[(test_trio, VECTOR)], remove=[], model="test-model")
@@ -206,7 +206,7 @@ class GoldenPostgresTests(unittest.TestCase):
             self.assertAlmostEqual(found[0]["similarity"], 1.0, places=5)
             self.assertGreater(found[0]["lexical"], 0)
             self.assertEqual(GoldenTrio.model_validate(found[0]["document"]), test_trio)
-            with self.assertRaises(ReportError):  # Chat agent role has SELECT only.
+            with self.assertRaises(StorageError):  # Chat agent role has SELECT only.
                 reader.publish(upserts=[(test_trio, VECTOR)], remove=[], model="test-model")
         finally:
             writer.publish(upserts=[], remove=[test_trio.id], model="test-model")

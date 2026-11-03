@@ -264,12 +264,13 @@ results and are not redacted: use demo data only. Stop with `docker compose down
 ```text
 main.py                      CLI and startup wiring
 retail_agent/agent/          LangGraph loop, actions, budgets, grounding check
-retail_agent/llm/            Gemini client (retry/fallback), analyst instructions, persona loader
+retail_agent/llm/            Gemini client (retry/fallback), embedder, analyst instructions, persona loader
 retail_agent/data/           BigQuery runner and QueryService (dry run, caps, safe errors)
 retail_agent/safety/         SQL policy, demographic shapes, result guard, numeric grounding
 retail_agent/security/       brand entitlements and per-table scope rewriting
 retail_agent/schema/         column policy catalog (allowed / aggregate-only / blocked PII)
-retail_agent/reports/        saved reports, embeddings, deletion preview/confirm
+retail_agent/storage/        shared PostgreSQL connection factory
+retail_agent/reports/        saved reports, deletion preview/confirm
 retail_agent/memory/         explicit user preferences
 retail_agent/golden/         trio model, ingestion, retrieval, retrieval evaluation
 retail_agent/evaluation/     live answer evaluation

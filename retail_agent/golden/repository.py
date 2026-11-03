@@ -1,36 +1,9 @@
 """Parameterized access to the Golden Knowledge index; never an LLM SQL tool."""
 
-import os
-from contextlib import contextmanager
-
-import psycopg
-from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from retail_agent.golden.models import GoldenError, GoldenTrio
-from retail_agent.reports.embeddings import vector_literal
-
-
-def ingest_connection_factory():
-    """Writer credentials for the offline ingestion job, separate from the chat agent."""
-
-    @contextmanager
-    def connection():
-        try:
-            with psycopg.connect(
-                host=os.getenv("REPORTS_POSTGRES_HOST", "127.0.0.1"),
-                port=int(os.getenv("REPORTS_POSTGRES_PORT", "5433")),
-                dbname=os.getenv("REPORTS_POSTGRES_DATABASE", "retail_agent"),
-                user=os.getenv("GOLDEN_INGEST_POSTGRES_USER", "golden_ingest"),
-                password=os.getenv("GOLDEN_INGEST_POSTGRES_PASSWORD", "local-golden-ingest-demo"),
-                connect_timeout=3, options="-c statement_timeout=15000 -c timezone=UTC",
-                row_factory=dict_row,
-            ) as conn:
-                yield conn
-        except (psycopg.Error, ValueError):
-            raise GoldenError("Golden index storage is unavailable or the write failed; nothing is confirmed.") from None
-
-    return connection
+from retail_agent.golden.models import GoldenTrio
+from retail_agent.llm.embeddings import vector_literal
 
 
 class GoldenRepository:

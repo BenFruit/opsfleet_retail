@@ -6,6 +6,8 @@ from google.api_core import exceptions as google_errors
 from retail_agent.data.bigquery_runner import BigQueryRunner, QueryExecution
 from retail_agent.data.query_service import QueryLimits, QueryService, QueryServiceError
 
+BRANDS_A = frozenset({"Brand A", "Brand B"})
+
 
 SQL = "SELECT SUM(oi.sale_price) AS revenue FROM `bigquery-public-data.thelook_ecommerce.order_items` AS oi"
 
@@ -21,14 +23,14 @@ class QueryServiceTests(unittest.TestCase):
         self.service = QueryService(self.runner, self.limits)
         self.logger = self.enterContext(patch("retail_agent.data.query_service.logger"))
 
-    def assert_error(self, code, sql=SQL, manager_id="manager_a"):
+    def assert_error(self, code, sql=SQL, allowed_brands=BRANDS_A):
         with self.assertRaises(QueryServiceError) as caught:
-            self.service.execute(sql, manager_id=manager_id)
+            self.service.execute(sql, allowed_brands=allowed_brands)
         self.assertEqual(caught.exception.code, code)
         return caught.exception
 
     def test_authorized_scoped_execution(self):
-        result = self.service.execute(SQL, manager_id="manager_a")
+        result = self.service.execute(SQL, allowed_brands=BRANDS_A)
         self.assertEqual(result.rows, ({"revenue": 30},))
         self.assertEqual(result.estimated_bytes, 50)
         dry_args, dry_kwargs = self.runner.dry_run.call_args
@@ -43,13 +45,13 @@ class QueryServiceTests(unittest.TestCase):
         self.assertEqual(kwargs["query_id"], result.query_id)
 
     def test_other_manager_uses_other_entitlements(self):
-        self.service.execute(SQL, manager_id="manager_b")
+        self.service.execute(SQL, allowed_brands=frozenset({"Brand C"}))
         self.assertEqual(self.runner.dry_run.call_args.kwargs["allowed_brands"], ("Brand C",))
 
-    def test_unknown_and_empty_entitlements_never_reach_bigquery(self):
-        for manager_id in ("unknown", "manager_empty"):
-            with self.subTest(manager_id=manager_id):
-                self.assert_error("access_denied", manager_id=manager_id)
+    def test_missing_or_malformed_entitlements_never_reach_bigquery(self):
+        for brands in (frozenset(), [], None, "Brand A", [""], ["Brand A", None]):
+            with self.subTest(brands=brands):
+                self.assert_error("access_denied", allowed_brands=brands)
         self.runner.dry_run.assert_not_called()
         self.runner.execute_scoped_query.assert_not_called()
 
@@ -83,22 +85,22 @@ class QueryServiceTests(unittest.TestCase):
 
     def test_cost_limit_boundary_is_allowed(self):
         self.runner.dry_run.return_value = 1000
-        self.service.execute(SQL, manager_id="manager_a")
+        self.service.execute(SQL, allowed_brands=BRANDS_A)
         self.runner.execute_scoped_query.assert_called_once()
 
     def test_remaining_question_budget_caps_both_estimate_and_execution(self):
-        self.service.execute(SQL, manager_id="manager_a", scan_budget_bytes=100)
+        self.service.execute(SQL, allowed_brands=BRANDS_A, scan_budget_bytes=100)
         self.assertEqual(self.runner.execute_scoped_query.call_args.kwargs["maximum_bytes_billed"], 100)
         self.runner.execute_scoped_query.reset_mock()
         with self.assertRaises(QueryServiceError) as caught:
-            self.service.execute(SQL, manager_id="manager_a", scan_budget_bytes=49)
+            self.service.execute(SQL, allowed_brands=BRANDS_A, scan_budget_bytes=49)
         self.assertEqual(caught.exception.code, "cost_limit")
         self.runner.execute_scoped_query.assert_not_called()
 
     def test_exhausted_question_budget_never_reaches_bigquery(self):
         for budget in (0, -1, True):
             with self.subTest(budget=budget), self.assertRaises(QueryServiceError):
-                self.service.execute(SQL, manager_id="manager_a", scan_budget_bytes=budget)
+                self.service.execute(SQL, allowed_brands=BRANDS_A, scan_budget_bytes=budget)
         self.runner.dry_run.assert_not_called()
 
     def test_unknown_estimate_fails_closed(self):
@@ -110,7 +112,7 @@ class QueryServiceTests(unittest.TestCase):
 
     def test_zero_estimate_is_valid(self):
         self.runner.dry_run.return_value = 0
-        self.service.execute(SQL, manager_id="manager_a")
+        self.service.execute(SQL, allowed_brands=BRANDS_A)
 
     def test_dry_run_failure_never_executes_or_retries(self):
         self.runner.dry_run.side_effect = google_errors.BadRequest("SECRET query text")
@@ -160,13 +162,13 @@ class QueryServiceTests(unittest.TestCase):
 
     def test_empty_result_is_valid_not_an_exception(self):
         self.runner.execute_scoped_query.return_value = QueryExecution(rows=(), truncated=False)
-        result = self.service.execute(SQL, manager_id="manager_a")
+        result = self.service.execute(SQL, allowed_brands=BRANDS_A)
         self.assertEqual(result.rows, ())
         self.assertFalse(result.truncated)
 
     def test_truncation_is_preserved(self):
         self.runner.execute_scoped_query.return_value = QueryExecution(rows=({"id": 1},), truncated=True)
-        self.assertTrue(self.service.execute(SQL, manager_id="manager_a").truncated)
+        self.assertTrue(self.service.execute(SQL, allowed_brands=BRANDS_A).truncated)
 
     def test_runner_row_overflow_fails_closed(self):
         self.runner.execute_scoped_query.return_value = QueryExecution(
@@ -190,7 +192,7 @@ class QueryServiceTests(unittest.TestCase):
         self.runner.execute_scoped_query.return_value = QueryExecution(
             rows=({"secret": "DO_NOT_LOG"},), truncated=False,
         )
-        result = self.service.execute(SQL, manager_id="manager_a")
+        result = self.service.execute(SQL, allowed_brands=BRANDS_A)
         self.assertNotIn("DO_NOT_LOG", repr(result))
         self.assertNotIn("DO_NOT_LOG", repr(self.runner.execute_scoped_query.return_value))
 
@@ -198,7 +200,7 @@ class QueryServiceTests(unittest.TestCase):
         self.runner.execute_scoped_query.return_value = QueryExecution(
             rows=({"text": "SECRET_ROW"},), truncated=False,
         )
-        self.service.execute(SQL, manager_id="manager_a")
+        self.service.execute(SQL, allowed_brands=BRANDS_A)
         self.runner.execute_scoped_query.side_effect = RuntimeError("SECRET_EXCEPTION")
         self.assert_error("query_failed")
         emitted = repr(self.logger.mock_calls)
@@ -209,10 +211,10 @@ class QueryServiceTests(unittest.TestCase):
         self.assertIn("error_code", emitted)
 
     def test_every_query_event_carries_turn_and_query_ids(self):
-        self.service.execute(SQL, manager_id="manager_a", turn_id="turn-1")
+        self.service.execute(SQL, allowed_brands=BRANDS_A, turn_id="turn-1")
         self.runner.execute_scoped_query.side_effect = google_errors.ServiceUnavailable("SECRET")
         with self.assertRaises(QueryServiceError) as caught:
-            self.service.execute(SQL, manager_id="manager_a", turn_id="turn-2")
+            self.service.execute(SQL, allowed_brands=BRANDS_A, turn_id="turn-2")
         self.assertRegex(caught.exception.query_id, r"^[0-9a-f]{32}$")
         events = {}
         for call in self.logger.info.call_args_list + self.logger.warning.call_args_list:

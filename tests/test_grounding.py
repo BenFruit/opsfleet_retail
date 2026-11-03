@@ -7,6 +7,7 @@ from retail_agent.agent.orchestrator import AnalyticalAgent
 from retail_agent.data.query_service import QueryLimits, QueryResult, QueryService
 from retail_agent.llm.analyst import Analyst
 from retail_agent.safety.grounding import figures, ungrounded_figures
+from demo_access import DEMO_ENTITLEMENTS
 
 
 SQL = ("SELECT p.category AS category, SUM(oi.sale_price) AS revenue FROM "
@@ -48,7 +49,7 @@ class AgentGroundingTests(unittest.TestCase):
             QueryResult("q1", ROWS, False, 10, 10, 10, columns=("category", "revenue")),
             QueryResult("q2", ({"revenue": 7175.03},), False, 10, 10, 10, columns=("revenue",)),
         ]
-        self.agent = AnalyticalAgent(self.analyst, self.service, manager_id="manager_a")
+        self.agent = AnalyticalAgent(self.analyst, self.service, manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS)
         self.logger = self.enterContext(patch("retail_agent.agent.orchestrator.logger"))
 
     def test_ungrounded_total_triggers_one_sql_correction(self):

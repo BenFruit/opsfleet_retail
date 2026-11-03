@@ -11,6 +11,7 @@ from retail_agent.agent.models import AgentAction, AgentLimits
 from retail_agent.agent.orchestrator import AnalyticalAgent
 from retail_agent.data.query_service import QueryLimits, QueryResult, QueryService, QueryServiceError
 from retail_agent.llm.analyst import Analyst
+from demo_access import DEMO_ENTITLEMENTS
 
 
 STATUS_SQL = "SELECT DISTINCT oi.status FROM `bigquery-public-data.thelook_ecommerce.order_items` AS oi"
@@ -36,7 +37,7 @@ class AnalyticalAgentTests(unittest.TestCase):
         self.service = Mock(spec=QueryService)
         self.service.limits = QueryLimits(maximum_bytes_billed=1000)
         self.service.execute.return_value = result()
-        self.agent = AnalyticalAgent(self.analyst, self.service, manager_id="manager_a")
+        self.agent = AnalyticalAgent(self.analyst, self.service, manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS)
         self.logger = self.enterContext(patch("retail_agent.agent.orchestrator.logger"))
 
     def test_one_query_then_answer(self):
@@ -47,7 +48,7 @@ class AnalyticalAgentTests(unittest.TestCase):
         self.assertEqual(turn.model_calls, 2)
         self.assertEqual(turn.scan_bytes_used, 10)
         self.service.execute.assert_called_once_with(
-            REVENUE_SQL, manager_id="manager_a", scan_budget_bytes=300_000_000,
+            REVENUE_SQL, allowed_brands=frozenset({"Brand A", "Brand B"}), scan_budget_bytes=300_000_000,
             turn_id=ANY,
         )
         observation = self.analyst.decide.call_args.kwargs["observations"][0]
@@ -78,7 +79,7 @@ class AnalyticalAgentTests(unittest.TestCase):
         self.assertNotIn("authorized_brand_count", context["budget"])
 
     def test_first_question_survives_history_trimming(self):
-        self.agent = AnalyticalAgent(self.analyst, self.service, manager_id="manager_a", limits=AgentLimits(max_history_turns=2))
+        self.agent = AnalyticalAgent(self.analyst, self.service, manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS, limits=AgentLimits(max_history_turns=2))
         self.analyst.decide.return_value = answer("Brief answer")
         for question in ("Hello", "Two", "Three", "What was my first question?"):
             self.agent.ask(question)
@@ -198,7 +199,7 @@ class AnalyticalAgentTests(unittest.TestCase):
         self.assertEqual(self.analyst.decide.call_args.kwargs["observations"][0]["status"], "empty")
 
     def test_max_queries_stops_model_that_keeps_querying(self):
-        self.agent = AnalyticalAgent(self.analyst, self.service, manager_id="manager_a", limits=AgentLimits(max_queries=2))
+        self.agent = AnalyticalAgent(self.analyst, self.service, manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS, limits=AgentLimits(max_queries=2))
         self.analyst.decide.return_value = query()
         turn = self.agent.ask("Revenue?")
         self.assertEqual(turn.queries, 2)
@@ -206,14 +207,14 @@ class AnalyticalAgentTests(unittest.TestCase):
         self.assertIn("budget", turn.answer)
 
     def test_max_model_calls_is_enforced(self):
-        self.agent = AnalyticalAgent(self.analyst, self.service, manager_id="manager_a", limits=AgentLimits(max_model_calls=1))
+        self.agent = AnalyticalAgent(self.analyst, self.service, manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS, limits=AgentLimits(max_model_calls=1))
         self.analyst.decide.return_value = query()
         turn = self.agent.ask("Revenue?")
         self.assertEqual(turn.model_calls, 1)
         self.assertEqual(turn.queries, 1)
 
     def test_question_budget_is_forwarded_and_exhaustion_stops_queries(self):
-        self.agent = AnalyticalAgent(self.analyst, self.service, manager_id="manager_a", limits=AgentLimits(max_scan_bytes=10))
+        self.agent = AnalyticalAgent(self.analyst, self.service, manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS, limits=AgentLimits(max_scan_bytes=10))
         self.analyst.decide.return_value = query()
         turn = self.agent.ask("Revenue?")
         self.assertEqual(turn.queries, 1)
@@ -292,7 +293,7 @@ class AnalyticalAgentTests(unittest.TestCase):
         self.analyst.decide.assert_not_called()
 
     def test_history_is_bounded(self):
-        self.agent = AnalyticalAgent(self.analyst, self.service, manager_id="manager_a", limits=AgentLimits(max_history_turns=2))
+        self.agent = AnalyticalAgent(self.analyst, self.service, manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS, limits=AgentLimits(max_history_turns=2))
         self.analyst.decide.return_value = answer("Brief answer")
         for question in ("One", "Two", "Three"):
             self.agent.ask(question)

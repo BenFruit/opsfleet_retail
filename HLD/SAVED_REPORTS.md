@@ -75,7 +75,9 @@ does not delete documents.
 ## Code and observability
 
 - `reports/models.py`: strict model request contract and controlled errors.
-- `reports/embeddings.py`: Google embedding requests, vector/input validation.
+- `llm/embeddings.py`: shared Google embedding requests, vector/input validation
+  (also used by memory and Golden).
+- `storage/postgres.py`: shared connection factory; driver errors become a fixed message.
 - `reports/repository.py`: parameterized owner/brand-scoped PostgreSQL operations.
 - `reports/service.py`: snapshot saving, bounded observations and deletion policy.
 - `agent/orchestrator.py`: report graph node, snapshot/conversation state, exact

@@ -8,7 +8,6 @@ from uuid import uuid4
 
 from retail_agent.reports.models import ReportError, ReportRequest
 from retail_agent.safety.result_guard import check_text
-from retail_agent.security.access import get_allowed_brands
 
 
 logger = logging.getLogger(__name__)
@@ -21,17 +20,19 @@ class PendingDeletion:
 
 
 class ReportLibrary:
-    def __init__(self, repository, embedder, *, manager_id: str):
+    def __init__(self, repository, embedder, *, manager_id: str, entitlements):
         self.repository = repository
         self.embedder = embedder
         self.manager_id = manager_id
+        self.entitlements = entitlements
         self.pending: PendingDeletion | None = None
 
     def cancel(self):
         self.pending = None
 
     def _access(self):
-        return {"owner": self.manager_id, "brands": sorted(get_allowed_brands(self.manager_id))}
+        # Re-read on every operation: access may have changed since a report was saved.
+        return {"owner": self.manager_id, "brands": sorted(self.entitlements.brands_for(self.manager_id))}
 
     @staticmethod
     def _summary(row):
@@ -48,7 +49,7 @@ class ReportLibrary:
                 raise ReportError("Access changed since that answer. Run the analysis again before saving.")
             check_text(last_answer)
             title = request.title.strip() or "Saved analysis"
-            vector = self.embedder.embed(last_answer, document=True, title=title)
+            vector = self.embedder.embed(last_answer, document=True, title=title, observation_name="report_embedding")
             report_id = uuid4().hex
             self.repository.save(
                 report_id=report_id, conversation_id=conversation_id, title=title,
@@ -57,7 +58,7 @@ class ReportLibrary:
             )
             return {"status": "report", "operation": "save", "report_id": report_id, "title": title}
         if request.operation == "search":
-            vector = self.embedder.embed(request.query, document=False)
+            vector = self.embedder.embed(request.query, document=False, observation_name="report_search_embedding")
             rows = self.repository.search(query=request.query, vector=vector, model=self.embedder.model, **access)
             results = []
             for row in rows:

@@ -8,12 +8,14 @@ from uuid import uuid4
 from retail_agent.agent.models import AgentAction, AgentLimits
 from retail_agent.agent.orchestrator import AnalyticalAgent
 from retail_agent.data.query_service import QueryLimits
-from retail_agent.reports.embeddings import ReportEmbedder, vector_literal
+from retail_agent.llm.embeddings import Embedder, EmbeddingError, vector_literal
 from retail_agent.reports.models import ReportError, ReportRequest
 from retail_agent.reports.repository import ReportRepository
 from retail_agent.reports.service import ReportLibrary, render_reports
 from retail_agent.safety.result_guard import ResultGuardError
-from retail_agent.security.access import MANAGER_BRANDS
+from retail_agent.security.access import Entitlements
+from retail_agent.storage.postgres import connection_factory
+from demo_access import DEMO_ENTITLEMENTS
 
 
 VECTOR = [1.0] + [0.0] * 767
@@ -28,10 +30,10 @@ def row(report_id=ID, **extra):
 class ReportPolicyTests(unittest.TestCase):
     def setUp(self):
         self.repo = Mock(spec=ReportRepository)
-        self.embedder = Mock(spec=ReportEmbedder)
+        self.embedder = Mock(spec=Embedder)
         self.embedder.model = "gemini-embedding-2"
         self.embedder.embed.return_value = VECTOR
-        self.library = ReportLibrary(self.repo, self.embedder, manager_id="manager_a")
+        self.library = ReportLibrary(self.repo, self.embedder, manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS)
 
     def execute(self, **request):
         return self.library.execute(ReportRequest(**{"query": "", **request}), conversation_id="c" * 32,
@@ -55,14 +57,14 @@ class ReportPolicyTests(unittest.TestCase):
         self.repo.save.assert_not_called()
 
     def test_changed_brands_prevent_saving_old_answer(self):
-        with patch.dict(MANAGER_BRANDS, {"manager_a": frozenset({"Brand A"})}):
+        with patch.object(self.library, "entitlements", Entitlements({"manager_a": ["Brand A"]})):
             with self.assertRaises(ReportError):
                 self.execute(operation="save")
         self.repo.save.assert_not_called()
 
     def test_embedding_failure_never_saves(self):
-        self.embedder.embed.side_effect = ReportError("Embedding unavailable")
-        with self.assertRaises(ReportError):
+        self.embedder.embed.side_effect = EmbeddingError("Embedding unavailable")
+        with self.assertRaises(EmbeddingError):
             self.execute(operation="save")
         self.repo.save.assert_not_called()
 
@@ -99,7 +101,7 @@ class ReportPolicyTests(unittest.TestCase):
     def test_delete_rechecks_current_access(self):
         self.repo.preview_delete.return_value = [row()]
         self.execute(operation="prepare_delete", scope="all")
-        with patch.dict(MANAGER_BRANDS, {"manager_a": frozenset({"Brand A"})}):
+        with patch.object(self.library, "entitlements", Entitlements({"manager_a": ["Brand A"]})):
             self.library.confirm()
         self.assertEqual(self.repo.delete.call_args.kwargs["brands"], ["Brand A"])
 
@@ -150,8 +152,8 @@ class ReportGraphTests(unittest.TestCase):
         self.repo = Mock(spec=ReportRepository)
         self.embedder = Mock(model="gemini-embedding-2")
         self.embedder.embed.return_value = VECTOR
-        self.library = ReportLibrary(self.repo, self.embedder, manager_id="manager_a")
-        self.agent = AnalyticalAgent(self.analyst, self.queries, manager_id="manager_a", reports=self.library)
+        self.library = ReportLibrary(self.repo, self.embedder, manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS)
+        self.agent = AnalyticalAgent(self.analyst, self.queries, manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS, reports=self.library)
 
     def test_save_preserves_last_answer_across_history_trimming_and_report_messages(self):
         self.analyst.decide.return_value = AgentAction(action="answer", answer="Checked narrative")
@@ -239,32 +241,40 @@ class ReportGraphTests(unittest.TestCase):
         self.assertIn("unavailable", self.agent.ask("Save").answer)
         self.assertEqual(self.agent.last_answer, "Original")
 
+    def test_embedding_failure_is_a_controlled_answer(self):
+        self.agent.last_answer = "Original"
+        self.agent.last_answer_brands = ["Brand A"]
+        self.embedder.embed.side_effect = EmbeddingError("Embedding service is unavailable.")
+        self.analyst.decide.return_value = AgentAction(action="report", report=ReportRequest(operation="save", query=""))
+        self.assertIn("Embedding service is unavailable", self.agent.ask("Save").answer)
+        self.repo.save.assert_not_called()
+
 
 class EmbeddingTests(unittest.TestCase):
     def test_vector_validation(self):
         for v in ([], [0.0] * 768, [float("nan")] * 768, [True] * 768):
-            with self.subTest(v=str(v[:1])), self.assertRaises(ReportError):
+            with self.subTest(v=str(v[:1])), self.assertRaises(EmbeddingError):
                 vector_literal(v)
 
     def test_google_request_format_dimensions_and_size_guard(self):
         gemini = Mock()
         gemini.client.models.embed_content.return_value = SimpleNamespace(embeddings=[SimpleNamespace(values=VECTOR)])
         with patch.dict(os.environ, {"REPORTS_EMBEDDING_MODEL": "gemini-embedding-2"}):
-            embedder = ReportEmbedder(gemini)
+            embedder = Embedder(gemini)
         self.assertEqual(embedder.embed("document", document=True, title="Title"), VECTOR)
         call = gemini.client.models.embed_content.call_args.kwargs
         self.assertEqual(call["contents"], "title: Title | text: document")
         self.assertEqual(call["config"].output_dimensionality, 768)
         embedder.embed("Nike", document=False)
         self.assertEqual(gemini.client.models.embed_content.call_args.kwargs["contents"], "task: search result | query: Nike")
-        with self.assertRaises(ReportError):
+        with self.assertRaises(EmbeddingError):
             embedder.embed("x" * 8001, document=True)
 
 
 @unittest.skipUnless(os.getenv("RETAIL_TEST_POSTGRES") == "1", "Opt-in local pgvector integration test")
 class ReportPostgresTests(unittest.TestCase):
     def test_real_storage_owner_scope_search_and_frozen_delete(self):
-        repo = ReportRepository()
+        repo = ReportRepository(connection_factory())
         owner = "test_" + uuid4().hex
         brands = ["Demo Brand"]
         ids = [uuid4().hex for _ in range(3)]

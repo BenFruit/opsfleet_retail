@@ -11,15 +11,16 @@ from retail_agent.golden.repository import GoldenRepository
 from retail_agent.golden.service import GoldenKnowledge
 from retail_agent.llm.analyst import Analyst
 from retail_agent.llm.client import GeminiClient
+from retail_agent.llm.embeddings import Embedder
 from retail_agent.observability.logging import configure_logging
 from retail_agent.observability.tracing import shutdown_tracing
-from retail_agent.reports.embeddings import ReportEmbedder
 from retail_agent.reports.repository import ReportRepository
 from retail_agent.reports.service import ReportLibrary
 from retail_agent.memory.repository import MemoryRepository
 from retail_agent.memory.service import UserMemory
 from retail_agent.schema.service import SchemaService
-from retail_agent.security.access import get_allowed_brands, load_brand_access
+from retail_agent.security.access import Entitlements
+from retail_agent.storage.postgres import connection_factory
 
 
 logger = logging.getLogger("retail_agent.startup")
@@ -85,8 +86,8 @@ def main() -> int:
     try:
         configure_logging(args.log_file)
         stage = "access_config"
-        load_brand_access(args.access_config)
-        get_allowed_brands(args.manager)
+        entitlements = Entitlements.from_file(args.access_config)
+        entitlements.brands_for(args.manager)  # Fail fast for an unknown identity.
         for name in ("GEMINI_API_KEY", "GEMINI_MODEL"):
             if not os.getenv(name):
                 print(f"Set {name} in your .env before starting the chat.")
@@ -101,18 +102,18 @@ def main() -> int:
             "orders", "order_items", "products", "users",
         )}
         stage = "agent_init"
-        repository = ReportRepository()
-        embedder = ReportEmbedder(llm)
+        connect = connection_factory()
+        embedder = Embedder(llm)
         golden = None
         if os.getenv("GOLDEN_RETRIEVAL_ENABLED", "true").lower() == "true":
             # The agent reads the index with its own read-only grant; ingestion is a separate job.
-            golden = GoldenKnowledge(GoldenRepository(repository.connection), embedder)
+            golden = GoldenKnowledge(GoldenRepository(connect), embedder)
         agent = AnalyticalAgent(
             Analyst(llm, schema),
             QueryService(runner, QueryLimits(minimum_cohort_size=args.min_cohort_size)),
-            manager_id=args.manager,
-            reports=ReportLibrary(repository, embedder, manager_id=args.manager),
-            memory=UserMemory(MemoryRepository(repository.connection), embedder, manager_id=args.manager),
+            manager_id=args.manager, entitlements=entitlements,
+            reports=ReportLibrary(ReportRepository(connect), embedder, manager_id=args.manager, entitlements=entitlements),
+            memory=UserMemory(MemoryRepository(connect), embedder, manager_id=args.manager),
             golden=golden,
         )
         logger.info("startup_completed", extra={

@@ -10,13 +10,13 @@ from retail_agent.agent.models import AgentLimits, AgentState, TurnResult
 from retail_agent.data.query_service import QueryService, QueryServiceError
 from retail_agent.llm.analyst import Analyst
 from retail_agent.llm.client import describe_model_error
+from retail_agent.llm.embeddings import EmbeddingError
 from retail_agent.memory.models import UserMemoryError
 from retail_agent.observability.tracing import get_callbacks, trace_operation
 from retail_agent.reports.models import ReportError
 from retail_agent.reports.service import render_reports
 from retail_agent.safety.grounding import ungrounded_figures
 from retail_agent.safety.result_guard import ResultGuardError, check_text, make_observation, remove_markdown_tables, render_observation
-from retail_agent.security.access import get_allowed_brands
 
 
 logger = logging.getLogger(__name__)
@@ -29,13 +29,13 @@ class AnalyticalAgent:
     """One trusted manager/session per instance; memory is bounded and in-process."""
 
     def __init__(
-        self, analyst: Analyst, query_service: QueryService, *, manager_id: str,
+        self, analyst: Analyst, query_service: QueryService, *, manager_id: str, entitlements,
         limits: AgentLimits | None = None,
         reports=None,
         memory=None,
         golden=None,
     ):
-        self.allowed_brands = sorted(get_allowed_brands(manager_id))
+        self.allowed_brands = sorted(entitlements.brands_for(manager_id))
         self.authorized_brand_count = len(self.allowed_brands)
         self.analyst = analyst
         self.query_service = query_service
@@ -368,7 +368,7 @@ class AnalyticalAgent:
                 update["answer"] = render_reports(observation)
             else:
                 update["observations"] = [*state["observations"], observation]
-        except (ReportError, ResultGuardError, PermissionError) as error:
+        except (ReportError, EmbeddingError, ResultGuardError, PermissionError) as error:
             status = "error"
             # ResultGuard errors contain controlled messages, never raw rows.
             update["answer"] = str(error) if not isinstance(error, PermissionError) else "No report access."
@@ -390,7 +390,7 @@ class AnalyticalAgent:
         spent = reserved
         try:
             result = self.query_service.execute(
-                action.sql, manager_id=self.manager_id, scan_budget_bytes=remaining,
+                action.sql, allowed_brands=frozenset(self.allowed_brands), scan_budget_bytes=remaining,
                 turn_id=state["turn_id"],
             )
             spent = max(result.estimated_bytes, result.bytes_billed or 0, result.bytes_processed or 0)

@@ -18,7 +18,8 @@ from retail_agent.llm.analyst import Analyst
 from retail_agent.llm.client import GeminiClient
 from retail_agent.observability.logging import SafeJsonFormatter
 from retail_agent.schema.catalog import TABLE_POLICIES
-from retail_agent.security.access import MANAGER_BRANDS, load_brand_access
+from retail_agent.security.access import Entitlements
+from demo_access import DEMO_ENTITLEMENTS
 
 
 class ChatIntegrationTests(unittest.TestCase):
@@ -40,7 +41,7 @@ class ChatIntegrationTests(unittest.TestCase):
             QueryExecution(({"status": "Complete"},), False, 50, 50),
             QueryExecution(({"revenue": 30},), False, 50, 50),
         ]
-        agent = AnalyticalAgent(Analyst(llm, schema), QueryService(runner), manager_id="manager_a")
+        agent = AnalyticalAgent(Analyst(llm, schema), QueryService(runner), manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS)
         turn = agent.ask("What is completed revenue?")
         self.assertTrue(turn.answer.startswith("Completed-item revenue is 30."))
         self.assertIn("| revenue |", turn.answer)
@@ -76,16 +77,19 @@ class ChatIntegrationTests(unittest.TestCase):
         agent.reset.assert_called_once()
         agent.ask.assert_not_called()
 
-    def test_access_config_loads_only_after_full_validation(self):
-        original = dict(MANAGER_BRANDS)
-        with patch.dict(MANAGER_BRANDS), patch("pathlib.Path.read_text", return_value='{"demo": ["A"]}'):
-            load_brand_access("unused.json")
-            self.assertEqual(MANAGER_BRANDS, {"demo": frozenset({"A"})})
-        self.assertEqual(MANAGER_BRANDS, original)
-        for data in ('[]', '{}', '{"demo": "A"}', '{"demo": [null]}'):
+    def test_access_config_is_fully_validated(self):
+        with patch("pathlib.Path.read_text", return_value='{"demo": ["A"], "empty": []}'):
+            entitlements = Entitlements.from_file("unused.json")
+        self.assertEqual(entitlements.brands_for("demo"), frozenset({"A"}))
+        for data in ('[]', '{}', '{"demo": "A"}', '{"demo": [null]}', '{"demo": [" "]}'):
             with self.subTest(data=data), patch("pathlib.Path.read_text", return_value=data), self.assertRaises(ValueError):
-                load_brand_access("unused.json")
-            self.assertEqual(MANAGER_BRANDS, original)
+                Entitlements.from_file("unused.json")
+
+    def test_unknown_or_empty_identity_is_denied(self):
+        entitlements = Entitlements({"demo": ["A"], "empty": []})
+        for manager in ("unknown", "empty"):
+            with self.subTest(manager=manager), self.assertRaises(PermissionError):
+                entitlements.brands_for(manager)
 
     def test_json_formatter_drops_arbitrary_extras_and_exception_text(self):
         record = logging.LogRecord("retail_agent.agent", logging.INFO, "file", 1, "agent_event", (), None)
@@ -104,7 +108,7 @@ class StartupDiagnosticsTests(unittest.TestCase):
         env = {"GEMINI_API_KEY": "fake", "GEMINI_MODEL": "m"}
         with patch.dict(os.environ, env, clear=True), patch("sys.argv", ["main.py"]), \
                 patch.object(entrypoint, "load_dotenv"), patch.object(entrypoint, "configure_logging"), \
-                patch.object(entrypoint, "load_brand_access"), patch.object(entrypoint, "get_allowed_brands"), \
+                patch.object(entrypoint, "Entitlements"), \
                 patch.object(entrypoint, "GeminiClient"), patch.object(entrypoint, "shutdown_tracing"), \
                 patch.object(entrypoint, "BigQueryRunner", side_effect=RuntimeError("SECRET credentials path")), \
                 patch.object(entrypoint, "logger") as startup_logger, \

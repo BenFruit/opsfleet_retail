@@ -10,7 +10,8 @@ from retail_agent.data.query_service import QueryLimits, QueryResult
 from retail_agent.memory.models import RememberRequest, UserMemoryError
 from retail_agent.memory.repository import MemoryRepository
 from retail_agent.memory.service import UserMemory, explicit_remember, memory_key
-from retail_agent.reports.repository import ReportRepository
+from retail_agent.storage.postgres import connection_factory
+from demo_access import DEMO_ENTITLEMENTS
 
 
 VECTOR = [1.0] + [0.0] * 767
@@ -114,7 +115,7 @@ class MemoryGraphTests(unittest.TestCase):
         self.memory = Mock(spec=UserMemory)
         self.memory.load.return_value = []
         self.memory.remember.return_value = {"status": "memory", "saved": True, "count": 1, "message": "Memory saved: 1 new entry."}
-        self.agent = AnalyticalAgent(self.analyst, self.queries, manager_id="manager_a", memory=self.memory)
+        self.agent = AnalyticalAgent(self.analyst, self.queries, manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS, memory=self.memory)
 
     def test_both_orderings_complete_query_and_remember_in_one_turn(self):
         for ordering in ("remember_first", "query_first"):
@@ -174,7 +175,7 @@ class MemoryGraphTests(unittest.TestCase):
 @unittest.skipUnless(os.getenv("RETAIL_TEST_POSTGRES") == "1", "Opt-in local PostgreSQL memory test")
 class MemoryPostgresTests(unittest.TestCase):
     def test_embeddings_exact_duplicates_owner_isolation_and_forget(self):
-        repo = MemoryRepository(ReportRepository().connection)
+        repo = MemoryRepository(connection_factory())
         owner, other = "memory_test_" + uuid4().hex, "memory_test_" + uuid4().hex
         entry = {"text": "Prefers bullets.", "key": memory_key("Prefers bullets."), "vector": VECTOR}
         try:
@@ -183,7 +184,7 @@ class MemoryPostgresTests(unittest.TestCase):
             self.assertEqual(repo.remember(other, [entry], "gemini-embedding-2", uuid4().hex), 1)
             own = repo.load(owner)
             self.assertEqual(len(own), 1)
-            restarted = UserMemory(MemoryRepository(ReportRepository().connection), Mock(), manager_id=owner)
+            restarted = UserMemory(MemoryRepository(connection_factory()), Mock(), manager_id=owner)
             self.assertEqual(restarted.load()[0]["text"], "Prefers bullets.")
             self.assertEqual(repo.forget(other, own[0]["memory_id"]), 0)
             with repo.connection() as conn:

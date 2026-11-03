@@ -1,32 +1,36 @@
+"""Trusted manager-to-brand entitlements.
+
+Loaded once at startup from local configuration (a stand-in for an identity and
+entitlement service) and passed explicitly to the components that need it.
+Never built from chat input or model output.
+"""
+
 import json
+from collections.abc import Mapping
 from pathlib import Path
+from types import MappingProxyType
 
 
-MANAGER_BRANDS = {
-    "manager_a": frozenset({"Brand A", "Brand B"}),
-    "manager_b": frozenset({"Brand C"}),
-    "manager_empty": frozenset(),
-}
+class Entitlements:
+    def __init__(self, mapping: Mapping[str, object]):
+        if not isinstance(mapping, Mapping) or not mapping:
+            raise ValueError("Access config must map manager IDs to lists of brands")
+        brands_by_manager = {}
+        for manager, brands in mapping.items():
+            if not isinstance(manager, str) or not manager.strip() or not isinstance(brands, (list, tuple, set, frozenset)):
+                raise ValueError("Invalid manager access config")
+            if any(not isinstance(brand, str) or not brand.strip() for brand in brands):
+                raise ValueError("Brand names must be nonempty strings")
+            brands_by_manager[manager] = frozenset(brands)
+        self._brands = MappingProxyType(brands_by_manager)
 
+    @classmethod
+    def from_file(cls, path: str | Path) -> "Entitlements":
+        return cls(json.loads(Path(path).read_text(encoding="utf-8-sig")))
 
-def load_brand_access(path: str) -> None:
-    """Load trusted local demo config at startup, never from chat/model content."""
-    data = json.loads(Path(path).read_text(encoding="utf-8-sig"))
-    if not isinstance(data, dict) or not data:
-        raise ValueError("Access config must map manager IDs to lists of brands")
-    mapping = {}
-    for manager, brands in data.items():
-        if not isinstance(manager, str) or not manager.strip() or not isinstance(brands, list):
-            raise ValueError("Invalid manager access config")
-        if any(not isinstance(brand, str) or not brand.strip() for brand in brands):
-            raise ValueError("Brand names must be nonempty strings")
-        mapping[manager] = frozenset(brands)
-    MANAGER_BRANDS.clear()
-    MANAGER_BRANDS.update(mapping)
-
-def get_allowed_brands(manager_id: str) -> frozenset[str]:
-    brands_allowed = MANAGER_BRANDS.get(manager_id)
-    if brands_allowed:
-        return brands_allowed
-    else:
-        raise PermissionError("No authorized brands for this manager")
+    def brands_for(self, manager_id: str) -> frozenset[str]:
+        """Authorized brands, or PermissionError for unknown/empty managers (fail closed)."""
+        brands = self._brands.get(manager_id)
+        if not brands:
+            raise PermissionError("No authorized brands for this manager")
+        return brands

@@ -45,8 +45,8 @@ def main(argv=None) -> int:
     from retail_agent.golden.repository import GoldenRepository
     from retail_agent.golden.service import GoldenKnowledge
     from retail_agent.llm.client import GeminiClient
-    from retail_agent.reports.embeddings import ReportEmbedder
-    from retail_agent.reports.repository import ReportRepository
+    from retail_agent.llm.embeddings import Embedder
+    from retail_agent.storage.postgres import connection_factory
 
     load_dotenv()
     parser = argparse.ArgumentParser(description="Evaluate Golden Knowledge retrieval")
@@ -55,8 +55,8 @@ def main(argv=None) -> int:
     cases = json.loads(args.cases.read_text(encoding="utf-8"))
     llm = GeminiClient()
     try:
-        embedder = ReportEmbedder(llm)
-        repository = GoldenRepository(ReportRepository().connection)
+        embedder = Embedder(llm)
+        repository = GoldenRepository(connection_factory())
         results = []
         for case in cases:
             text = GoldenKnowledge.query_text(case["question"])

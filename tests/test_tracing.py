@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from retail_agent.observability import tracing
+from demo_access import DEMO_ENTITLEMENTS
 
 
 class TracingTests(unittest.TestCase):
@@ -83,7 +84,7 @@ class TracingTests(unittest.TestCase):
         analyst.decide.side_effect = decide
         service = Mock()
         service.limits = QueryLimits()
-        agent = AnalyticalAgent(analyst, service, manager_id="manager_a")
+        agent = AnalyticalAgent(analyst, service, manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS)
         self.assertEqual(agent.ask("Describe available data").answer, "Demo answer")
         client.flush()
         spans = {span.name: span for span in exporter.get_finished_spans()}

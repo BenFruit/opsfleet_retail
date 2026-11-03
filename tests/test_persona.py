@@ -8,6 +8,7 @@ from retail_agent.agent.orchestrator import AnalyticalAgent
 from retail_agent.data.query_service import QueryLimits
 from retail_agent.llm.analyst import Analyst, SYSTEM_INSTRUCTION
 from retail_agent.llm.persona import DEFAULT_STYLE, PersonaProvider
+from demo_access import DEMO_ENTITLEMENTS
 
 
 DOC_ID = "a" * 40
@@ -109,7 +110,7 @@ class PersonaTests(unittest.TestCase):
         llm.generate_structured.return_value = AgentAction(action="answer", answer="Demo")
         query_service = Mock()
         query_service.limits = QueryLimits()
-        agent = AnalyticalAgent(analyst, query_service, manager_id="manager_a")
+        agent = AnalyticalAgent(analyst, query_service, manager_id="manager_a", entitlements=DEMO_ENTITLEMENTS)
         with patch.object(analyst, "refresh_persona", wraps=analyst.refresh_persona) as refresh:
             agent.ask("Question one")
             agent.ask("Question two")
