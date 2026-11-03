@@ -103,7 +103,7 @@ local PostgreSQL is not an offline/private inference guarantee. Raw memory text
 may appear in enabled Langfuse traces; sanitization remains deferred. Re-embedding
 requires model/dimension compatibility and a versioned migration plan.
 
-## Observed manual failures and deliberately unchanged behavior
+## Observed MVP behavior and the production fix
 
 A request to remember both an operator name and long-answer preference saved only
 the preference; the name was saved on a second request. This demonstrates incomplete
@@ -113,8 +113,11 @@ current question lacked explicit persistence intent. The old preference remained
 
 Updating/superseding a stored preference is not implemented. An explicit new
 preference may coexist with a contradictory old one; vector similarity is not
-conflict resolution. This is deliberately left as is in the prototype; the
-production design is in PRODUCTION_HLD.md §5.4. Current-turn
+conflict resolution. Both are accepted for the MVP. In production, preferences
+become slots (format, depth, language, charts) where the latest explicit value wins
+and the old one is kept as history, and every save echoes what was stored so a
+partial extraction is visible at once (see the lifecycle section above and
+PRODUCTION_HLD.md §5.4). Current-turn
 preference precedence is an instruction to the model, not a guaranteed behavior.
 
 This is user-level memory, NOT automatic system learning or persona administration.

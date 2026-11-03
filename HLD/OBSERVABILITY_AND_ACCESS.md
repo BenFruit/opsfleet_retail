@@ -39,7 +39,7 @@ Trace only). The options and trade-offs are in PRODUCTION_HLD.md §5.7. Both Lan
 options are configuration only; Cloud Trace without Langfuse needs an
 OpenTelemetry adapter in place of `observability/tracing.py`.
 
-## Deferred: PII-safe trace export (required before production)
+## Production requirement: PII-safe trace export
 
 **Full trace payload sanitization is NOT implemented.** Enabled tracing can export
 question/history, saved operator memory, schema context, authorized brand names, SQL, tool observations,

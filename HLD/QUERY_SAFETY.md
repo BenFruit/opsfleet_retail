@@ -128,7 +128,7 @@ Residual limitations, NOT solved by k-suppression:
   proof or support for every BigQuery construct. Generic free-text PII detection
   is not solved by supplemental email/phone patterns.
 
-## Production strengthening (NOT implemented)
+## Production strengthening (beyond the MVP)
 
 Use database-enforced identity-aware access/safe views and least-privilege accounts;
 govern/version metric definitions and grain; evaluate source/contributor lineage

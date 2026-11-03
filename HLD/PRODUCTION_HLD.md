@@ -283,7 +283,34 @@ forking or trimming the parser would add risk without benefit.
 
 **PostgreSQL + pgvector** for all application state, including vectors: one
 transactional store, parameterized queries, owner scoping, and exact search that
-is fast at hundreds to thousands of rows.
+is fast at hundreds to thousands of rows. The prototype runs it as a local Docker
+container so anyone can reproduce the setup with one command and no cloud
+account beyond BigQuery. The application only needs a PostgreSQL connection
+(host, port, database, role from settings) and the four SQL migrations, so Cloud
+SQL for PostgreSQL or AlloyDB, which both offer pgvector, replace the container by
+configuration, without code changes.
+
+**Langfuse for LLM tracing (optional).** Langfuse is not part of the system: it is
+a separate, open-source tracing platform that one team usually hosts for many
+projects. It was chosen because it shows a whole turn as one nested trace (graph
+nodes, every Gemini call with prompt, output and tokens, every tool step), which
+makes debugging an agent far faster than reading logs, and because it can be self-
+hosted so prompts stay in our cloud. The prototype includes a local Langfuse stack
+to show how this works for this project; it is off by default, the agent runs and
+logs without it, and it plugs in through LangGraph's callback interface. Production
+options are in [§5.7](#57-observability).
+
+**Supporting tools.**
+
+| Tool | Why |
+| --- | --- |
+| BigQuery | Given by the assignment; dry runs give a scan estimate before any cost, and `maximum_bytes_billed` caps it |
+| Pydantic v2 | One schema both for the model's JSON actions (sent to Gemini as JSON Schema) and for validating them locally |
+| pydantic-settings | Configuration read once from `.env` and the environment, typed and validated, secrets masked |
+| psycopg 3 | Plain parameterized SQL with explicit transactions; no ORM between the code and the access checks |
+| Docker Compose | The local database (and optional Langfuse) with one command and pinned images |
+| uv | Fast, locked, reproducible installs including the Python version ([README](../README.md#why-uv)) |
+| pytest, ruff | Test runner and linter/formatter; tests run offline without credentials |
 
 **Alternatives considered.**
 - *Google ADK*: strong for multi-agent systems and deployment to Vertex Agent
@@ -620,26 +647,22 @@ and are cited separately from database facts.
 3. Golden bucket on Cloud Storage with PR review and feedback mining.
 4. New tools (charts, email) behind the confirmation pattern.
 
-## 8. Known limitations of the prototype
+## 8. MVP scope and the production path
 
-- No real authentication; the operator chooses the demo identity at startup.
-- Access is enforced by application SQL rewriting; the data layer is not yet a
-  second boundary.
-- Cross-question inference is documented, not prevented.
-- Email/phone patterns are not general free-text PII detection; optional
-  Langfuse traces are not redacted.
-- Numeric grounding covers money and count figures; derived percentages and
-  averages written in prose are not verified (seen in the README example).
-- Memory has no supersession of conflicting preferences, and one request to
-  remember several things may store only some of them
-  ([USER_MEMORY.md](USER_MEMORY.md)).
-- Analytic correctness is not guaranteed. Manual runs showed partial or rolling
-  months described as full months, causal claims the data does not support and
-  missing status filters; prompt rules and Golden precedents reduce, not remove, these.
-- The demographic subset rejects CTEs, subqueries, windows and conditional
-  aggregates, and `AVG(age)` over purchases is purchase-weighted
-  ([QUERY_SAFETY.md](QUERY_SAFETY.md)).
-- Conversation history is bounded (6 turns / 20,000 characters); a single turn
-  larger than the bound clears the history instead of keeping a shortened copy.
-- Evaluation sets are small (30 retrieval, 15 answer cases) and the judge is not
-  calibrated against humans.
+The prototype is an MVP: it implements every requirement the assignment marks
+for the prototype and keeps the rest small and honest. Each simplification below
+is deliberate, and the right column is how it is closed in production.
+
+| In the MVP | In production |
+| --- | --- |
+| The operator chooses a demo identity at startup (`--manager`); no login | OIDC sign-in and an entitlement service; identity comes from the token ([§2.1](#21-production-serving-architecture-production)) |
+| Brand access is enforced by application SQL rewriting | The same rewriting plus BigQuery authorized views or row access policies as a second, independent boundary |
+| Cross-question inference (differencing two allowed aggregates) is documented, not prevented, as agreed with the client | Per-user budgets on demographic dimensions, overlap detection between recent demographic queries, differential privacy for high-risk aggregates ([§5.2](#52-safety-pii-and-access)) |
+| Email/phone patterns guard free text; optional Langfuse traces are not masked | A PII detection service (e.g. Cloud DLP) on free text, and masking through the tracing SDK before traces are enabled by default |
+| Prose figures are grounded for money and counts; derived percentages are not checked | Extend grounding to ratios and averages computed from checked values |
+| Memory keeps explicit preferences; a contradictory new preference does not replace an old one, and one request may store only part of what was asked | Preference slots with latest-wins and history, a confirmation echo of what was saved, semantic duplicate checks ([USER_MEMORY.md](USER_MEMORY.md)) |
+| Analytic correctness relies on prompt rules, Golden precedents and the grounding check; manual runs still showed occasional rolling months called full months or unsupported causal claims | More reviewed trios for those patterns, release-gated answer evaluation, analyst review of reports before they are shared |
+| The demographic SQL subset rejects CTEs, subqueries, windows and conditional aggregates; `AVG(age)` over purchases is purchase-weighted | Widen the validated subset only with tests for each new shape ([QUERY_SAFETY.md](QUERY_SAFETY.md)) |
+| History is held in process (6 turns / 20,000 characters); one turn larger than the bound clears it | Sessions in Cloud SQL with summarisation of old turns instead of dropping them |
+| Evaluation sets are small (30 retrieval, 15 answer cases), and the judge is not calibrated against people | 100-300 cases from real questions, repeated runs, a judge calibrated against analysts ([EVALUATION.md](EVALUATION.md)) |
+| Local PostgreSQL and optional local Langfuse in Docker | Cloud SQL or AlloyDB by configuration; tracing as a shared platform service ([§3](#3-technology-choices), [§5.7](#57-observability)) |

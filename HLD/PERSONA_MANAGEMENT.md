@@ -49,7 +49,7 @@ independent and cannot be disabled by editing this document. The document editor
 is trusted, and current arbitrary-text style configuration is not production-safe
 instruction management. Sensitive trace handling remains separately deferred.
 
-## Production design: administrator console (NOT implemented)
+## Production design: administrator console (beyond the MVP)
 
 - Provide authenticated admin UI with RBAC and an audit trail of who changed what.
 - Store structured style settings/templates in a versioned configuration store

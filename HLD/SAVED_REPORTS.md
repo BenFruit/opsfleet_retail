@@ -104,7 +104,7 @@ is a separate `report_confirmation` tool observation without a model call. Local
 events record action names, not report contents; comprehensive trace redaction
 remains deferred as documented in OBSERVABILITY_AND_ACCESS.md.
 
-## Production proposals, NOT implemented
+## Production design (beyond the MVP)
 
 - Real authentication, governed entitlement refresh, database-enforced isolation,
   managed secrets/TLS, backups, retention/deletion policy, versioned migrations.
