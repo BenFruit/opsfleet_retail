@@ -15,7 +15,8 @@ class DocumentationTests(unittest.TestCase):
                 self.assertIn(source, blocks)
 
     def test_relative_markdown_links_resolve(self):
-        for doc in [REPO_ROOT / "README.md", REPO_ROOT / "AGENTS.md", *sorted((REPO_ROOT / "HLD").glob("*.md"))]:
+        # Published documentation only; local working notes are not in the repository.
+        for doc in [REPO_ROOT / "README.md", *sorted((REPO_ROOT / "HLD").glob("*.md"))]:
             text = doc.read_text(encoding="utf-8")
             for target in re.findall(r"\]\(([^)#\s]+)(?:#[^)]*)?\)", text):
                 if target.startswith(("http://", "https://", "mailto:")):

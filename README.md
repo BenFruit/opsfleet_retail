@@ -24,39 +24,57 @@ choices, every requirement, error handling, production path) ·
 | Observability | Correlated JSON events, metrics report, per-turn timeline, optional local Langfuse |
 | Persona | Tone and structure editable in a Google Doc, applied on the next question without redeploying |
 
-## Quick start (Windows PowerShell)
+## Quick start
 
-Prerequisites: Python 3.13+, [uv](https://docs.astral.sh/uv/), Google Cloud CLI,
-Docker Desktop (Linux containers), a Google Cloud project with the BigQuery API
-enabled (the free tier is enough), and a Gemini API key from Google AI Studio.
+Prerequisites: Python 3.13+, Google Cloud CLI, Docker (Docker Desktop on
+Windows/macOS) for the application database, a Google Cloud project with the
+BigQuery API enabled (the free tier is enough), and a Gemini API key from Google
+AI Studio. [uv](https://docs.astral.sh/uv/) is recommended; plain pip works too.
+Run every command from the repository root.
+
+**1. Dependencies and local config**
+
+macOS / Linux:
+
+```bash
+uv sync                      # or: python3.13 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
+cp .env.example .env
+cp access.example.json access.local.json
+```
+
+Windows PowerShell:
 
 ```powershell
-# 1. Dependencies and local config
-uv sync
+uv sync                      # or: py -3.13 -m venv .venv; .venv\Scripts\Activate.ps1; pip install -r requirements.txt
 Copy-Item .env.example .env
 Copy-Item access.example.json access.local.json
+```
 
-# 2. Google credentials for BigQuery
+With pip, drop the `uv run` prefix from the commands below and use `python` from
+the activated environment. `requirements.txt` pins the runtime packages exported
+from `uv.lock`; tests and lint tools come with `uv sync`.
+
+**2. Google credentials for BigQuery**
+
+```bash
 gcloud auth application-default login
 gcloud auth application-default set-quota-project YOUR_PROJECT_ID
 ```
 
-3. Edit `.env`: `GEMINI_API_KEY`, `GEMINI_MODEL` (a model enabled in your AI
-   Studio project, e.g. a current Flash-Lite model), optionally
-   `GEMINI_FALLBACK_MODEL` (e.g. a current Flash model), and `GOOGLE_CLOUD_PROJECT`.
-4. Edit `access.local.json`: map demo managers to exact brand names from the
-   dataset, e.g. `{"manager_a": ["Calvin Klein", "Nautica", "Tommy Hilfiger"]}`.
-   This is trusted startup configuration that simulates entitlements; it is not
-   authentication.
+**3. Edit `.env`:** `GEMINI_API_KEY`, `GEMINI_MODEL` (a model enabled in your AI
+Studio project, e.g. a current Flash-Lite model), optionally
+`GEMINI_FALLBACK_MODEL` (e.g. a current Flash model), and `GOOGLE_CLOUD_PROJECT`.
 
-```powershell
-# 5. Application database (PostgreSQL 17 + pgvector; migrations run on first start)
-docker compose up -d --wait reports-postgres
+**4. Edit `access.local.json`:** map demo managers to exact brand names from the
+dataset, e.g. `{"manager_a": ["Calvin Klein", "Nautica", "Tommy Hilfiger"]}`.
+This is trusted startup configuration that simulates entitlements; it is not
+authentication.
 
-# 6. Build the Golden Knowledge index (validates, embeds, publishes)
-uv run python -m retail_agent.golden.ingest
+**5-7. Database, Golden Knowledge index, chat** (same on every OS):
 
-# 7. Chat
+```bash
+docker compose up -d --wait reports-postgres     # PostgreSQL 17 + pgvector; migrations run on first start
+uv run python -m retail_agent.golden.ingest      # validates, embeds and publishes the Golden trios
 uv run python main.py --manager manager_a
 ```
 
@@ -137,7 +155,7 @@ You: /confirm
 Analyst: Deleted 1 of 1 previewed reports. Ownership/access were checked again.
 [SQL attempts: 0; model calls: 0]
 
-You: exit=0
+You: /exit
 ```
 
 What happened behind it: each question retrieved a Golden precedent (cited as
@@ -216,14 +234,13 @@ All limits (model calls, SQL attempts, bytes, rows, timeouts) are listed in the
 
 ## Tests, evaluation and metrics
 
-```powershell
+```bash
 uv run python -B -m pytest                                 # offline, no credentials
 uv run python -B -m pytest tests/unit                      # one layer (unit, integration)
 uv run ruff check . ; uv run ruff format --check .         # lint and formatting
 
-$env:RETAIL_TEST_POSTGRES='1'                               # + real PostgreSQL/pgvector
-uv run python -B -m pytest
-Remove-Item Env:RETAIL_TEST_POSTGRES
+RETAIL_TEST_POSTGRES=1 uv run python -B -m pytest           # + real PostgreSQL/pgvector (bash)
+# PowerShell: $env:RETAIL_TEST_POSTGRES='1'; uv run python -B -m pytest; Remove-Item Env:RETAIL_TEST_POSTGRES
 
 uv run python -m retail_agent.golden.evaluate              # retrieval quality (paid embeddings)
 uv run python -m retail_agent.evaluation.answers           # live answer evaluation (paid calls)
@@ -236,8 +253,10 @@ uv run python -m retail_agent.observability.metrics --turn <turn_id>
 Latest results: 284 tests pass (including PostgreSQL); retrieval recall@3 0.96;
 answer evaluation 15/15 deterministic checks and 100% judge pass with Golden
 Knowledge versus 14/15 and 60% without ([HLD/EVALUATION.md](HLD/EVALUATION.md)).
-Setup was also verified from a fresh clone on Windows, including a fresh
-database volume (migrations 001-004), Golden ingestion and a CLI question.
+Setup was also verified from a fresh clone on Windows, with uv and with plain
+pip, including a fresh database volume (migrations 001-004), Golden ingestion and
+a CLI question. The macOS/Linux commands are the standard equivalents and were
+not run on those systems.
 
 ## Observability
 
@@ -264,8 +283,9 @@ results and are not redacted: use demo data only. Stop with `docker compose down
   `model_invalid_action` (corrected automatically up to twice).
 - **Existing database volume** created before a migration: apply missing
   migrations in order, without deleting data, e.g.
-  `Get-Content docker/reports-postgres/004_golden_knowledge.sql -Raw | docker compose exec -T reports-postgres psql -U postgres -d retail_agent -v ON_ERROR_STOP=1`
-  (same for 002 and 003). Fresh volumes run all of them automatically.
+  `docker compose exec -T reports-postgres psql -U postgres -d retail_agent -v ON_ERROR_STOP=1 < docker/reports-postgres/004_golden_knowledge.sql`
+  (PowerShell: pipe `Get-Content <file> -Raw` into the same command; same for 002
+  and 003). Fresh volumes run all of them automatically.
 - **"Your application has authenticated using end user credentials ... without a
   quota project"**: run `gcloud auth application-default set-quota-project`.
 
