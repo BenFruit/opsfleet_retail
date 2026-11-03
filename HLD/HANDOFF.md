@@ -9,7 +9,7 @@ must never be presented as implemented.
 
 Refactoring steps 1-4 end at `00d402c` and review steps A-G at `6f6fb70`;
 both are pushed to `origin/master`. A second review added steps H-K; H
-(reports) is done, I-K remain (see REFACTOR_PLAN.md).
+(reports) and I (memory) are done, J-K remain (see REFACTOR_PLAN.md).
 Fix batches 1-4 from the 3 November review (resilience/logging, Golden
 Knowledge, answer evaluation, documentation and metrics) are committed and
 described in PRODUCTION_HLD.md, GOLDEN_KNOWLEDGE.md and EVALUATION.md.
@@ -91,7 +91,7 @@ Other limitations:
 
 ## Verification record
 
-After refactoring step H: 282 tests passed with pytest, including the opt-in
+After refactoring step I: 283 tests passed with pytest, including the opt-in
 PostgreSQL tests (`RETAIL_TEST_POSTGRES=1`). After step 4 the built wheel contained the prompt file.
 The 15-case answer evaluation was last run before the refactoring (Golden 15/15
 deterministic, judge 1.00; baseline 14/15, judge 0.60; see EVALUATION.md).

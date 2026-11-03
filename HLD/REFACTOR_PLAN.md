@@ -205,7 +205,15 @@ schemas unchanged):
     descriptions). It is a comment again (schema equal to step E) and
     `tests/support/agent_action_schema.json` is now a snapshot test of the whole
     model-facing action schema.
-- **I. Memory.** Comments 1-2.
+- **I. Memory.** Comments 1-2. Done: `memory/intent.py` holds
+  `explicit_remember` and `memory_key`. `MemoryRepository` is storage only:
+  `list(owner, limit)`, `add(owner, entries, max_entries, ...)` and
+  `delete(owner, memory_id=None)`. Duplicates are skipped by
+  `ON CONFLICT (owner_id, normalized_key) DO NOTHING`; the capacity check runs
+  after the inserts under the owner lock and raises `MemoryCapacityError`, which
+  rolls the transaction back. `UserMemory` owns the rules and messages (same
+  texts) and translates that error. New PostgreSQL test: overflow rolls back the
+  whole insert and duplicates do not count. 283 tests pass.
 - **J. Embedder.** Comment 3.
 - **K. SQL policy package.** `retail_agent/sql/` with `validator.py` (validate
   once; forbidden node types as a table; table/column checks as functions),

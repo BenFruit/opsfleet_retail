@@ -1,27 +1,17 @@
+"""Rules for explicit user memory: who may save, limits, duplicates, safe messages."""
+
 import logging
 import re
-import unicodedata
-from hashlib import sha256
 
+from retail_agent.memory.intent import explicit_remember, memory_key
 from retail_agent.memory.models import MAX_ENTRIES, MAX_ENTRY_CHARS, RememberRequest, UserMemoryError
+from retail_agent.memory.repository import MemoryCapacityError
 from retail_agent.safety.result_guard import check_text
 
 
 logger = logging.getLogger(__name__)
 
-
-def memory_key(text: str) -> str:
-    normalized = " ".join(unicodedata.normalize("NFKC", text).casefold().split())
-    return sha256(normalized.encode("utf-8")).hexdigest()
-
-
-def explicit_remember(question: str) -> bool:
-    # Conservative MVP intent gate in addition to LLM classification. One-off
-    # formatting alone cannot trigger persistence; quoted/indirect intent still
-    # needs semantic evaluation (documented, not a security proof).
-    if re.search(r"\b(?:do not|don't|never)\s+remember\b|\bне\s+запом", question, re.I):
-        return False
-    return bool(re.search(r"\bremember\b|\bзапомни(?:те)?\b", question, re.I))
+_LIMIT_REACHED = f"Memory limit reached ({MAX_ENTRIES} entries). Forget an old entry first"
 
 
 class UserMemory:
@@ -32,7 +22,8 @@ class UserMemory:
 
     def load(self):
         try:
-            rows = self.repository.load(self.manager_id)
+            # One row beyond the limit detects an over-limit store instead of dropping entries.
+            rows = self.repository.list(self.manager_id, limit=MAX_ENTRIES + 1)
             if len(rows) > MAX_ENTRIES:
                 raise UserMemoryError("Stored memory exceeds the MVP context limit.")
             result = []
@@ -57,12 +48,12 @@ class UserMemory:
                     entries[key] = text
             # Early check without a lock; the repository repeats it atomically.
             if len(known) + len(entries) > MAX_ENTRIES:
-                raise UserMemoryError(f"Memory limit reached ({MAX_ENTRIES} entries). Forget an old entry first.")
+                raise UserMemoryError(f"{_LIMIT_REACHED}.")
             # Obtain all embeddings before the single atomic database write.
             prepared = [{"key": key, "text": text, "vector": self.embedder.embed(
                 text, document=True, title="User memory", observation_name="memory_embedding",
             )} for key, text in entries.items()]
-            count = self.repository.remember(self.manager_id, prepared, self.embedder.model, turn_id) if prepared else 0
+            count = self._add(prepared, turn_id) if prepared else 0
             logger.info("user_memory_saved", extra={"row_count": count, "status": "ok"})
             return {"status": "memory", "saved": True, "count": count,
                     "message": f"Memory saved: {count} new entries; existing exact duplicates were not added."}
@@ -75,8 +66,16 @@ class UserMemory:
         if memory_id is not None and not re.fullmatch(r"[0-9a-f]{32}", memory_id):
             raise UserMemoryError("Use /forget followed by a memory ID from /memories.")
         try:
-            count = self.repository.forget(self.manager_id, memory_id)
+            count = self.repository.delete(self.manager_id, memory_id)
             logger.info("user_memory_forgotten", extra={"row_count": count, "status": "ok"})
             return f"Forgot {count} memory entries."
         except Exception:
             raise UserMemoryError("Memory deletion was not confirmed. Inspect /memories before retrying.") from None
+
+    def _add(self, prepared: list[dict], turn_id) -> int:
+        try:
+            return self.repository.add(self.manager_id, prepared, max_entries=MAX_ENTRIES,
+                                       model=self.embedder.model, turn_id=turn_id)
+        except MemoryCapacityError:
+            # A concurrent save filled the library after the early check above.
+            raise UserMemoryError(f"{_LIMIT_REACHED}; nothing new was saved.") from None
