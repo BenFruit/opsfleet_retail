@@ -82,7 +82,7 @@ flowchart TB
 
     subgraph Ops["Observability"]
         LOGS["Cloud Logging: allowlisted JSON events, sink to BigQuery"]
-        TRACE["OpenTelemetry: Cloud Trace / Langfuse, redacted"]
+        TRACE["LLM tracing: Langfuse as a separate shared platform, optional; masked"]
         MON["Cloud Monitoring: SLOs, alerts"]
     end
 
@@ -115,7 +115,7 @@ flowchart TB
 | Application state | Cloud SQL PostgreSQL + pgvector | Reports, memory, sessions, pending confirmations, Golden index and persona versions need transactions; pgvector avoids a separate vector service at this scale |
 | Golden bucket | Cloud Storage (versioned) + pull-request review | Immutable trio versions and audit trail; ingestion publishes into pgvector |
 | Secrets | Secret Manager | API keys and DB credentials out of images and config |
-| Observability | Cloud Logging (sink to BigQuery), OpenTelemetry to Cloud Trace or Langfuse, Cloud Monitoring | Metadata events for metrics/alerts; redacted traces for deep dives |
+| Observability | Cloud Logging (sink to BigQuery) and Cloud Monitoring; LLM tracing in Langfuse, a separate shared platform service, if the organization runs or buys one ([§5.7](#57-observability)) | Metadata events for metrics and alerts; masked traces for deep dives |
 | Offline jobs | Cloud Run Jobs, Cloud Build, Cloud Scheduler | Golden ingestion, evaluation gates, feedback mining ([§5.4](#54-continuous-improvement)) |
 
 ### 2.2 One question, end to end (Implemented, except the API hop)
@@ -264,7 +264,7 @@ infrastructure I have built and operated by hand.
 | Golden index | PostgreSQL `golden_trios` | Agent: SELECT only; ingestion role: write | Rebuildable from the bucket |
 | Persona | Google Doc (prototype); Cloud SQL versions (production) | Admins edit; agent reads | Style only; mandatory policy stays in code |
 | Logs | `logs/agent.jsonl`; Cloud Logging | Operators | Allowlisted metadata fields: IDs, codes, counts, durations, tokens; no prompts, SQL or rows |
-| Traces (optional) | Local Langfuse; production redacted traces | Restricted | Prototype traces contain raw prompts: demo data only |
+| Traces (optional) | Local Langfuse; production: shared Langfuse platform or none | Restricted | Prototype traces contain raw prompts: demo data only |
 
 **What leaves the trust boundary:** questions, result-guarded rows, report text,
 memory entries and trio text are sent to Google (Gemini, embeddings). Direct PII
@@ -464,11 +464,39 @@ failure stage, retrieval, grounding repairs). With Langfuse enabled the same
 `turn_id` opens the full trace with prompts and model outputs (demo data only,
 because traces are not redacted yet).
 
-**Production:** the same events to Cloud Logging with a BigQuery sink for these
-metrics as dashboard queries; alerts on partial-answer rate, model error/fallback
-rate, SQL recovery drop, p95 latency, cost per turn and any safety rejection
-spike; OpenTelemetry traces with field-level redaction and restricted access; SLO
-proposal: 99.5% availability, p95 under 30 s for single-query questions.
+**Two layers, two jobs.** The JSON events are the always-on, content-free layer:
+metrics and alerts ("how often and where does it fail"). Traces are the deep-dive
+layer with full content ("why did this turn fail"). `observability/tracing.py` is
+the Langfuse integration itself, not a separate system; it is opt-in because
+prototype traces carry raw prompts, SQL and result rows.
+
+**Production metrics and alerts:** the same events to Cloud Logging with a
+BigQuery sink for these metrics as dashboard queries; alerts in Cloud Monitoring
+on partial-answer rate, model error/fallback rate, SQL recovery drop, p95 latency,
+cost per turn and any safety rejection spike; SLO proposal: 99.5% availability,
+p95 under 30 s for single-query questions.
+
+**Production tracing is a platform decision.** Langfuse is not part of this
+application. It is a separate service with its own stack (web and worker,
+PostgreSQL, ClickHouse, Redis, object storage) that lives outside the project and
+serves many projects and teams, each with its own organization, project and keys.
+The local Docker Compose stack only simulates it for development. Whether and how
+to run it depends on the organization's capacity and data rules:
+
+| Option | Fits when | Operations |
+| --- | --- | --- |
+| Shared self-hosted Langfuse, run by a platform team on GCP (GKE or Cloud Run, Cloud SQL, ClickHouse, Cloud Storage, Memorystore) | Several AI projects need LLM tracing and data must stay in our cloud | Highest, shared across projects |
+| Managed Langfuse Cloud | A data-processing agreement and region are acceptable | Lowest; masking still mandatory |
+| No LLM tracing platform: Cloud Logging + Cloud Trace with allowlisted events, plus sampled debug payloads in a restricted bucket | Neither of the above is available | Low; no prompt-level UI |
+
+The application only needs an OpenTelemetry-compatible exporter and keys from
+Secret Manager, so the choice is configuration, not code. Before tracing is
+enabled by default under any option: masking through the SDK `mask` hook (reuse
+the contact-detail patterns, drop raw result rows, keep shapes and counts);
+separate spans for SQL validation, dry run and execution; domain signals as trace
+tags or scores (partial answer, SQL recovery, ungrounded figures, Golden trio
+used); evaluation results as scores; retention and access rules per project.
+Alerting stays in Cloud Monitoring either way.
 
 ### 5.8 Persona management
 

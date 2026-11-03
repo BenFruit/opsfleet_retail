@@ -26,6 +26,19 @@ currently live inside the `query` node. Controlled query failures are observatio
 data, so a successful node/run can still contain an error observation. Inspect
 the observation code and counters, not just the dashboard's success indicator.
 
+## Langfuse is a separate platform service
+
+Langfuse is not a component of this application. It is a standalone platform
+(web and worker, PostgreSQL, ClickHouse, Redis, object storage) that normally
+lives outside any single project and manages tracing for many projects and
+teams, each with its own organization, project and API keys. The root Compose
+file runs a private copy only to develop and demo locally. In production, using
+it depends on the organization: a shared self-hosted instance run by a platform
+team, managed Langfuse Cloud, or no LLM tracing platform (Cloud Logging and Cloud
+Trace only). The options and trade-offs are in PRODUCTION_HLD.md §5.7. The
+application needs only an OpenTelemetry-compatible exporter and keys, so the
+choice is configuration.
+
 ## Deferred: PII-safe trace export (required before production)
 
 **Full trace payload sanitization is NOT implemented.** Enabled tracing can export
@@ -49,6 +62,11 @@ Before production:
   fallback logs; evaluate operational overhead and timeouts.
 - Add trace-linked evaluation datasets and metrics for query success, repair,
   safety rejection, latency, tokens, scans, budget stops and answer quality.
+- Use the Langfuse SDK `mask` hook (available in the installed SDK) as the single
+  redaction point for every exported event; drop raw result rows, keep shapes.
+- Emit separate spans for SQL validation, dry run and execution, and attach
+  domain signals as tags/scores (partial answer, SQL recovery, ungrounded
+  figures, Golden trio used) so traces can be filtered by them.
 
 This deferred work is a known privacy gap, not a completed safety capability.
 

@@ -33,7 +33,7 @@ flowchart TB
 
     subgraph Ops["Observability"]
         LOGS["Cloud Logging: allowlisted JSON events, sink to BigQuery"]
-        TRACE["OpenTelemetry: Cloud Trace / Langfuse, redacted"]
+        TRACE["LLM tracing: Langfuse as a separate shared platform, optional; masked"]
         MON["Cloud Monitoring: SLOs, alerts"]
     end
 
