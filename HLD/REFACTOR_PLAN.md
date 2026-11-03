@@ -4,7 +4,7 @@ Code quality pass after the functional work. Behaviour, safety scope, prompts an
 thresholds must not change; every step keeps the full suite green (including
 `RETAIL_TEST_POSTGRES=1`) and is one commit in the developer's name.
 
-## Done (pushed to `origin/master`)
+## Steps 1-4 (pushed to `origin/master`)
 
 | Commit | Step |
 |---|---|
@@ -25,7 +25,7 @@ Answer-quality notes, not refactoring regressions: the age-band prose ordered
 lowest band "mid-tier" (figures themselves match the table, so the grounding
 check passes); the `remember` turn also restated the previous answer.
 
-## Done locally (not pushed)
+## Steps A-G from the review (pushed to `origin/master`, ending at `6f6fb70`)
 
 - **A. Settings.** `retail_agent/settings.py` (pydantic-settings, frozen) is built
   once by each entry point (chat, answer evaluation, Golden ingest/evaluate);
@@ -101,7 +101,7 @@ check passes); the `remember` turn also restated the previous answer.
   `test_commands.py` (exact commands, confirm/cancel, memory commands cancel a
   pending deletion). Builders in `tests/support/agent_state.py`. Recorded, not
   changed: a single turn larger than `max_history_chars` empties the history,
-  the new turn included. 278 tests pass.
+  the new turn included. 278 tests pass. Commit `6f6fb70`.
 
 ## Review findings (backend developer, 3 November) still open
 

@@ -7,7 +7,8 @@ must never be presented as implemented.
 
 ## Baseline and pending work
 
-Refactoring steps 1-4 end at `00d402c`, which is pushed to `origin/master`.
+Refactoring steps 1-4 end at `00d402c` and review steps A-G at `6f6fb70`;
+both are pushed to `origin/master`.
 Fix batches 1-4 from the 3 November review (resilience/logging, Golden
 Knowledge, answer evaluation, documentation and metrics) are committed and
 described in PRODUCTION_HLD.md, GOLDEN_KNOWLEDGE.md and EVALUATION.md.
@@ -125,8 +126,7 @@ public Git. Do not copy credentials into documentation or commits.
 
 ## Next priorities
 
-1. Further review comments, if any, extend [REFACTOR_PLAN.md](REFACTOR_PLAN.md); push
-   the local refactoring commits when the developer asks.
+1. Further review comments, if any, extend [REFACTOR_PLAN.md](REFACTOR_PLAN.md).
 2. Developer review of the experience paragraph in PRODUCTION_HLD.md §3.
 3. Build a larger intent/SQL/report/UX evaluation set, prioritizing business
    grain, status and calendar boundaries.
