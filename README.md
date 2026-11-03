@@ -293,7 +293,7 @@ docker/reports-postgres/     migrations 001-004
 HLD/                         design documents and Mermaid diagrams
 tests/unit/                  per-module tests, folders mirror retail_agent/
 tests/integration/           agent graph with fake backends; postgres/ is opt-in real DB
-tests/support/               demo entitlements and repository paths shared by tests
+tests/support/               demo entitlements, repository paths and agent-state builders
 ```
 
 Git does not carry local data: reports, memories, the Golden index, traces and

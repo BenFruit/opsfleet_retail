@@ -92,6 +92,16 @@ check passes); the `remember` turn also restated the previous answer.
   dropped. Checked: the same 262 `Class.test` names before and after, and every
   class body is identical except the two that read repository files. pytest uses
   `--import-mode=importlib` so equal file names in different folders are allowed.
+  Commit `57b0063`.
+- **G2. Direct tests of pure modules.** `tests/unit/agent/test_answer.py`
+  (feedback codes, partial answer, repair request after only failures, partial
+  stop without budget, model tables replaced by checked ones, one ungrounded
+  repair then a visible note, earlier-turn evidence, report/memory output),
+  `test_conversation.py` (which answers can be saved, history trimming) and
+  `test_commands.py` (exact commands, confirm/cancel, memory commands cancel a
+  pending deletion). Builders in `tests/support/agent_state.py`. Recorded, not
+  changed: a single turn larger than `max_history_chars` empties the history,
+  the new turn included. 278 tests pass.
 
 ## Review findings (backend developer, 3 November) still open
 
@@ -140,7 +150,7 @@ Closed by steps 1-4: 3 (commands extracted), 6 (prompt in a file),
   rename, `parse_google_doc_id` as a function, default style in
   `llm/prompts/`. Findings 10-12.
 - ~~F. Memory~~ (done above). One limit constant, docstrings. Findings 14, 15.
-- **G. Tests.** G1 done above; G2 remains. Reorganize after the code settles: `tests/unit/<package>/`
+- ~~G. Tests~~ (G1 and G2 done above). Reorganize after the code settles: `tests/unit/<package>/`
   mirroring `retail_agent/`, `tests/integration/` (graph with fake backends,
   PostgreSQL), `tests/support/` (demo entitlements, fakes, builders). Test pure
   modules such as `agent/answer.py` directly instead of through the whole graph.
