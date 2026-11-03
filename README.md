@@ -268,7 +268,9 @@ results and are not redacted: use demo data only. Stop with `docker compose down
 ## Repository layout
 
 ```text
-main.py                      CLI and startup stages
+main.py                      entry point (calls retail_agent.cli.main)
+retail_agent/cli.py          CLI arguments, startup messages and the chat input loop
+retail_agent/application.py  startup stages, safe startup errors, client lifecycle
 retail_agent/bootstrap.py    agent wiring shared by the CLI and answer evaluation
 retail_agent/presentation.py Markdown tables and report listings from checked data
 retail_agent/agent/          LangGraph loop, actions, budgets, grounding check

@@ -17,17 +17,19 @@ Reading order:
 
 ## Repository map
 
-- `main.py`: startup dependencies and CLI commands.
+- `main.py` -> `retail_agent/cli.py` (arguments, chat input loop) ->
+  `retail_agent/application.py` (`ChatApplication`: named startup stages, safe
+  startup errors, client/tracing shutdown). `retail_agent/settings.py`: `.env` values.
 - `retail_agent/agent/`: Pydantic actions and limits; `orchestrator.py` (LangGraph
   loop, nodes, budgets), `answer.py` (final-answer checks and repair feedback),
   `commands.py` (exact slash commands, no model), `conversation.py` (history).
 - `retail_agent/llm/`: direct Gemini SDK, shared `Embedder`, analyst, style loader;
   the mandatory policy prompt is `llm/prompts/analyst_policy.md`.
-- `retail_agent/bootstrap.py`: agent wiring shared by `main.py` and answer
+- `retail_agent/bootstrap.py`: agent wiring shared by the chat application and answer
   evaluation. `retail_agent/presentation.py`: user-facing Markdown rendering.
 - `retail_agent/data/`, `schema/`, `safety/`, `security/`: query execution,
-  curated source policy, SQL/result guards, `Entitlements` (loaded once in
-  `main.py`, passed explicitly) and trusted brand rewriting.
+  curated source policy, SQL/result guards, `Entitlements` (loaded once at
+  startup, passed explicitly) and trusted brand rewriting.
 - `retail_agent/storage/postgres.py`: one PostgreSQL connection factory shared by
   reports, memory and Golden; driver errors become a fixed `StorageError`.
 - `retail_agent/reports/`: parameterized repository and report lifecycle.
@@ -111,4 +113,4 @@ branches. Commit and push only when the developer asks.
 Git transfers code/docs, not local DB data, remote persona contents or credentials.
 Update `HLD/HANDOFF.md` and relevant focused docs after significant decisions;
 keep Mermaid diagrams and production-vs-MVP labels synchronized. Do not claim
-the regression suite (251 tests) or the 15-case answer evaluation or isolated live successes prove semantic correctness.
+the regression suite (255 tests) or the 15-case answer evaluation or isolated live successes prove semantic correctness.

@@ -40,7 +40,14 @@ check passes); the `remember` turn also restated the previous answer.
   an invalid value (e.g. non-numeric port) stops startup and prints only the
   variable names; `.env` is read from the current directory. 251 tests pass with
   PostgreSQL; live: one chat question with Golden and Langfuse enabled, Golden
-  BigQuery dry run.
+  BigQuery dry run. Commit `455fe2d`.
+- **B. Application class.** `main.py` only calls `retail_agent.cli.main`.
+  `cli.py` parses flags into `ChatOptions`, prints startup messages and runs the
+  input loop (`run_chat`, unchanged). `application.py` has `ChatApplication`
+  (context manager: `start()` builds the agent in named stages, exit closes
+  tracing, Gemini and BigQuery clients) and `startup_stage`, which replaces the
+  mutable `stage` variable and turns failures into `StartupError` with the same
+  safe messages, hints and `startup_failed` log as before. 255 tests pass.
 
 ## Review findings (backend developer, 3 November) still open
 
@@ -78,7 +85,7 @@ Closed by steps 1-4: 3 (commands extracted), 6 (prompt in a file),
 - ~~A. Settings~~ (done above). One `Settings` object (pydantic-settings) built once from
   `.env` and CLI flags; components receive values through constructors. No
   `os.getenv`/`load_dotenv` inside classes. Findings 1, 9.
-- **B. Application class.** `main.py` becomes a few lines; startup stages and
+- ~~B. Application class~~ (done above). `main.py` becomes a few lines; startup stages and
   wiring move to an application class, the input loop to `cli.py`. Finding 2.
 - **C. Error classifiers and statics.** Table-driven `llm/errors.py`
   (`describe_model_error`, empty-response reasons) and a BigQuery error
