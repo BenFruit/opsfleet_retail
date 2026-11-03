@@ -3,6 +3,7 @@
 import json
 
 from retail_agent.agent.answer import query_failures
+from retail_agent.observations import ObservationStatus
 
 
 def is_snapshot_answer(result: dict) -> bool:
@@ -16,7 +17,9 @@ def is_snapshot_answer(result: dict) -> bool:
         return False
     if action is None or action.action != "answer":
         return False
-    return not query_failures(result["observations"]) or any(item["status"] == "ok" for item in result["observations"])
+    return not query_failures(result["observations"]) or any(
+        item["status"] == ObservationStatus.OK for item in result["observations"]
+    )
 
 
 def append_turn(history: list[dict], question: str, result: dict, limits) -> bool:

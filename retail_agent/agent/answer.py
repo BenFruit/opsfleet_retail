@@ -8,7 +8,9 @@ and a premature or ungrounded answer is sent back for one bounded repair.
 import logging
 
 from retail_agent.agent.feedback import REPAIR_REQUIRED, ungrounded_numbers
+from retail_agent.observations import CHECKED_RESULT, ObservationStatus
 from retail_agent.presentation import remove_markdown_tables, render_observation, render_reports
+from retail_agent.reports.models import ReportOperation
 from retail_agent.safety.grounding import ungrounded_figures
 
 logger = logging.getLogger(__name__)
@@ -19,7 +21,11 @@ FEEDBACK_CODES = {"model_invalid_action", "model_invalid_json", "repair_required
 
 
 def query_failures(observations: list[dict]) -> list[dict]:
-    return [item for item in observations if item["status"] == "error" and item.get("code") not in FEEDBACK_CODES]
+    return [
+        item
+        for item in observations
+        if item["status"] == ObservationStatus.ERROR and item.get("code") not in FEEDBACK_CODES
+    ]
 
 
 def partial_answer(state, reason: str) -> str:
@@ -29,7 +35,7 @@ def partial_answer(state, reason: str) -> str:
     if failures:
         last = failures[-1]
         text += f"\nLast query issue: [{last['code']}] {last['message']}"
-    successes = [item for item in state["observations"] if item["status"] == "ok"]
+    successes = [item for item in state["observations"] if item["status"] == ObservationStatus.OK]
     if successes:
         text += "\nLast checked result (may be partial):\n" + render_observation(successes[-1], max_rows=10)
     return text
@@ -41,15 +47,15 @@ def _feedback(state, update: dict, code: str, message: str) -> dict:
         **update,
         "action": None,
         "action_retries": state["action_retries"] + 1,
-        "observations": [*state["observations"], {"status": "error", "code": code, "message": message}],
+        "observations": [*state["observations"], {"status": ObservationStatus.ERROR, "code": code, "message": message}],
     }
 
 
 def finalize_answer(state, answer: str, update: dict, *, limits, authorized_brand_count: int) -> dict:
     """Return the graph update for an "answer" action: final text or one repair request."""
     observations = state["observations"]
-    checked = [item for item in observations if item["status"] in {"ok", "empty"}]
-    report_results = [item for item in observations if item["status"] == "report"]
+    checked = [item for item in observations if item["status"] in CHECKED_RESULT]
+    report_results = [item for item in observations if item["status"] == ObservationStatus.REPORT]
 
     if query_failures(observations) and not checked and not report_results:
         # A premature final answer is not a replacement for repairing the failed SQL.
@@ -109,9 +115,11 @@ def finalize_answer(state, answer: str, update: dict, *, limits, authorized_bran
         )
     if report_results:
         text += "\n\nReport sources:\n" + "\n".join(
-            render_reports(item) for item in report_results if item["operation"] in {"search", "list"}
+            render_reports(item)
+            for item in report_results
+            if item["operation"] in {ReportOperation.SEARCH, ReportOperation.LIST}
         )
     for event in observations:
-        if event["status"] == "memory":
+        if event["status"] == ObservationStatus.MEMORY:
             text += "\n\n" + event["message"]
     return {**update, "answer": text}

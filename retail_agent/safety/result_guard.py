@@ -6,6 +6,7 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
+from retail_agent.observations import ObservationStatus
 from retail_agent.safety.errors import ResultGuardError
 from retail_agent.safety.sensitive_text import check_text
 from retail_agent.sql.demographics import COHORT_COLUMN
@@ -46,7 +47,7 @@ def make_observation(sql: str, result: "QueryResult", *, max_chars: int) -> dict
     context = result.query_context
     check_text(json.dumps(context, ensure_ascii=False))
     observation = {
-        "status": "empty",
+        "status": ObservationStatus.EMPTY,
         "query_id": result.query_id,
         "rows": [],
         "truncated": result.truncated,
@@ -74,7 +75,7 @@ def make_observation(sql: str, result: "QueryResult", *, max_chars: int) -> dict
         if full:
             continue
         observation["rows"].append(safe)
-        observation["status"] = "ok"
+        observation["status"] = ObservationStatus.OK
         if len(json.dumps(observation, ensure_ascii=False)) > max_chars:
             observation["rows"].pop()
             if not observation["rows"]:

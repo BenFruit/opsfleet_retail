@@ -24,8 +24,9 @@ from retail_agent.llm.embeddings import EmbeddingError
 from retail_agent.llm.errors import describe_model_error
 from retail_agent.memory.models import UserMemoryError
 from retail_agent.observability.tracing import get_callbacks
+from retail_agent.observations import ObservationStatus
 from retail_agent.presentation import render_reports
-from retail_agent.reports.models import ReportError
+from retail_agent.reports.models import ReportError, ReportOperation
 from retail_agent.safety.errors import ResultGuardError
 from retail_agent.safety.result_guard import make_observation
 from retail_agent.safety.sensitive_text import check_text
@@ -242,7 +243,7 @@ class AnalyticalAgent:
                     "observations": [
                         *state["observations"],
                         {
-                            "status": "memory",
+                            "status": ObservationStatus.MEMORY,
                             "saved": False,
                             "message": MEMORY_ALREADY_ATTEMPTED,
                         },
@@ -309,7 +310,7 @@ class AnalyticalAgent:
                 "observations": [
                     *state["observations"],
                     {
-                        "status": "error",
+                        "status": ObservationStatus.ERROR,
                         "code": code,
                         "message": REJECTED_ACTION,
                     },
@@ -331,10 +332,10 @@ class AnalyticalAgent:
             except UserMemoryError:
                 update["memory_status"] = "unavailable"
         except UserMemoryError as error:
-            observation = {"status": "memory", "saved": False, "message": str(error)}
+            observation = {"status": ObservationStatus.MEMORY, "saved": False, "message": str(error)}
         except Exception:
             observation = {
-                "status": "memory",
+                "status": ObservationStatus.MEMORY,
                 "saved": False,
                 "message": "Memory write was not confirmed. Inspect /memories before retrying.",
             }
@@ -357,7 +358,7 @@ class AnalyticalAgent:
                 last_answer=self.session.last_answer,
                 last_brands=self.session.last_answer_brands,
             )
-            if request.operation in {"save", "open", "list", "prepare_delete"} or not observation.get("reports"):
+            if request.operation != ReportOperation.SEARCH or not observation.get("reports"):
                 update["answer"] = render_reports(observation)
             else:
                 update["observations"] = [*state["observations"], observation]
@@ -396,7 +397,7 @@ class AnalyticalAgent:
             observation = make_observation(action.sql, result, max_chars=self.limits.max_observation_chars)
             errors = 0
         except QueryServiceError as error:
-            observation = {"status": "error", "code": error.code, "message": str(error)}
+            observation = {"status": ObservationStatus.ERROR, "code": error.code, "message": str(error)}
             if error.query_id:
                 observation["query_id"] = error.query_id
             # Echo the attempted SQL so the model can repair it, unless it contains suspicious literals.
@@ -413,13 +414,17 @@ class AnalyticalAgent:
                 spent = 0  # These errors happen before job execution.
         except ResultGuardError:
             observation = {
-                "status": "error",
+                "status": ObservationStatus.ERROR,
                 "code": "unsafe_result",
                 "message": "Result was withheld by the output guard.",
             }
             errors = state["consecutive_errors"] + 1
         except Exception:
-            observation = {"status": "error", "code": "query_failed", "message": "The query could not be completed."}
+            observation = {
+                "status": ObservationStatus.ERROR,
+                "code": "query_failed",
+                "message": "The query could not be completed.",
+            }
             errors = state["consecutive_errors"] + 1
 
         update = {

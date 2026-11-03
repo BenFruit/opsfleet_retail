@@ -9,6 +9,8 @@ import json
 import re
 from decimal import Decimal
 
+from retail_agent.reports.models import ReportOperation
+
 
 def render_observation(observation: dict, *, max_rows: int = 200) -> str:
     """Render checked values; never invent pages or hidden rows."""
@@ -67,15 +69,19 @@ def remove_markdown_tables(text: str) -> str:
 
 def render_reports(observation: dict) -> str:
     operation = observation["operation"]
-    if operation == "save":
+    if operation == ReportOperation.SAVE:
         return f"Saved report: {observation['title']}\nID: {observation['report_id']}"
-    if operation == "open":
+    if operation == ReportOperation.OPEN:
         return f"{observation['title']}\nID: {observation['report_id']} | {observation['created_at']}\nHistorical snapshot.\n\n{observation['content']}"
     rows = observation["reports"]
     if not rows:
-        return "No matching reports. Nothing was deleted." if operation == "prepare_delete" else "No reports found."
+        return (
+            "No matching reports. Nothing was deleted."
+            if operation == ReportOperation.PREPARE_DELETE
+            else "No reports found."
+        )
     lines = [f"{row['report_id']} | {row['title']} | {row['created_at']}" for row in rows]
-    if operation == "prepare_delete":
+    if operation == ReportOperation.PREPARE_DELETE:
         return (
             "Deletion preview (nothing deleted yet):\n"
             + "\n".join(lines)
