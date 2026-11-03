@@ -6,6 +6,9 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+import httpx
+from google.genai import errors as genai_errors
+
 from main import run_chat
 from retail_agent.agent.models import AgentAction
 from retail_agent.agent.orchestrator import AnalyticalAgent
@@ -95,6 +98,27 @@ class ChatIntegrationTests(unittest.TestCase):
         self.assertEqual(json.loads(text)["turn_id"], "id")
 
 
+class StartupDiagnosticsTests(unittest.TestCase):
+    def test_failure_reports_stage_and_error_class_but_not_exception_text(self):
+        import main as entrypoint
+
+        env = {"GEMINI_API_KEY": "fake", "GEMINI_MODEL": "m"}
+        with patch.dict(os.environ, env, clear=True), patch("sys.argv", ["main.py"]), \
+                patch.object(entrypoint, "load_dotenv"), patch.object(entrypoint, "configure_logging"), \
+                patch.object(entrypoint, "load_brand_access"), patch.object(entrypoint, "get_allowed_brands"), \
+                patch.object(entrypoint, "GeminiClient"), patch.object(entrypoint, "shutdown_tracing"), \
+                patch.object(entrypoint, "BigQueryRunner", side_effect=RuntimeError("SECRET credentials path")), \
+                patch.object(entrypoint, "logger") as startup_logger, \
+                patch("sys.stdout", new_callable=io.StringIO) as stdout:
+            self.assertEqual(entrypoint.main(), 1)
+        self.assertIn("stage 'bigquery_client' (RuntimeError)", stdout.getvalue())
+        self.assertIn("gcloud auth application-default login", stdout.getvalue())
+        startup_logger.error.assert_called_once_with(
+            "startup_failed", extra={"stage": "bigquery_client", "error_type": "RuntimeError"},
+        )
+        self.assertNotIn("SECRET", stdout.getvalue() + repr(startup_logger.mock_calls))
+
+
 class GeminiClientTests(unittest.TestCase):
     def test_constructor_model_override_timeout_and_disabled_retries(self):
         with patch("retail_agent.llm.client.load_dotenv"), patch.dict(os.environ, {"GEMINI_API_KEY": "fake", "GEMINI_MODEL": "env-model"}, clear=True), patch("retail_agent.llm.client.genai.Client") as sdk:
@@ -126,6 +150,92 @@ class GeminiClientTests(unittest.TestCase):
     def test_missing_model_is_not_replaced_by_unverified_default(self):
         with patch("retail_agent.llm.client.load_dotenv"), patch.dict(os.environ, {"GEMINI_API_KEY": "fake"}, clear=True), self.assertRaises(ValueError):
             GeminiClient()
+
+
+OK_RESPONSE = SimpleNamespace(
+    text='{"action": "answer", "answer": "ok"}',
+    usage_metadata=SimpleNamespace(prompt_token_count=1, candidates_token_count=1, total_token_count=2),
+)
+
+
+def api_error(status, message="SECRET", retry_after=None):
+    response = httpx.Response(status, headers={"Retry-After": retry_after}) if retry_after else None
+    return genai_errors.APIError(status, {"error": {"message": message}}, response)
+
+
+class GeminiRetryTests(unittest.TestCase):
+    def make_client(self, outcomes, fallback=""):
+        env = {"GEMINI_API_KEY": "fake", "GEMINI_MODEL": "primary", "GEMINI_FALLBACK_MODEL": fallback}
+        self.enterContext(patch("retail_agent.llm.client.load_dotenv"))
+        self.enterContext(patch.dict(os.environ, env, clear=True))
+        sdk = self.enterContext(patch("retail_agent.llm.client.genai.Client"))
+        self.generate = sdk.return_value.models.generate_content
+        self.generate.side_effect = outcomes
+        self.sleep = Mock()
+        self.logger = self.enterContext(patch("retail_agent.llm.client.logger"))
+        return GeminiClient(sleep=self.sleep)
+
+    def models_called(self):
+        return [call.kwargs["model"] for call in self.generate.call_args_list]
+
+    def test_transient_error_is_retried_once_on_the_same_model(self):
+        client = self.make_client([api_error(503), OK_RESPONSE])
+        self.assertEqual(client.generate_structured("p", AgentAction).answer, "ok")
+        self.assertEqual(self.models_called(), ["primary", "primary"])
+        self.sleep.assert_called_once()
+        self.assertLessEqual(self.sleep.call_args.args[0], client.max_delay_seconds)
+        self.assertEqual(client.last_usage["model"], "primary")
+
+    def test_persistent_outage_switches_to_fallback_and_never_returns_to_primary(self):
+        client = self.make_client([api_error(503), api_error(503), OK_RESPONSE], fallback="backup")
+        client.generate_structured("p", AgentAction)
+        self.assertEqual(self.models_called(), ["primary", "primary", "backup"])
+        self.assertEqual(client.last_usage["model"], "backup")
+        client = self.make_client([api_error(503), api_error(503), api_error(503)], fallback="backup")
+        with self.assertRaises(genai_errors.APIError):
+            client.generate_structured("p", AgentAction)
+        self.assertEqual(self.models_called(), ["primary", "primary", "backup"])
+
+    def test_without_fallback_the_error_is_raised_after_bounded_attempts(self):
+        client = self.make_client([api_error(503), api_error(503), OK_RESPONSE])
+        with self.assertRaises(genai_errors.APIError):
+            client.generate_structured("p", AgentAction)
+        self.assertEqual(self.generate.call_count, client.max_attempts)
+
+    def test_daily_quota_timeout_and_long_retry_after_skip_to_fallback_without_waiting(self):
+        for error in (api_error(429, "Quota perDay exceeded"), httpx.ReadTimeout("SECRET"), api_error(429, retry_after="60")):
+            with self.subTest(error=type(error).__name__):
+                client = self.make_client([error, OK_RESPONSE], fallback="backup")
+                client.generate_structured("p", AgentAction)
+                self.assertEqual(self.models_called(), ["primary", "backup"])
+                self.sleep.assert_not_called()
+
+    def test_short_retry_after_is_honoured(self):
+        client = self.make_client([api_error(429, retry_after="3"), OK_RESPONSE])
+        client.generate_structured("p", AgentAction)
+        self.sleep.assert_called_once_with(3.0)
+
+    def test_invalid_output_and_permanent_errors_are_not_retried(self):
+        invalid = SimpleNamespace(text='{"action": "SECRET"}', usage_metadata=None)
+        for outcome in (invalid, api_error(400), api_error(401)):
+            with self.subTest(outcome=outcome):
+                client = self.make_client([outcome, OK_RESPONSE], fallback="backup")
+                with self.assertRaises(Exception):
+                    client.generate_structured("p", AgentAction)
+                self.assertEqual(self.generate.call_count, 1)
+
+    def test_retry_log_is_metadata_only(self):
+        client = self.make_client([api_error(503, "SECRET body"), OK_RESPONSE])
+        client.generate_structured("SECRET prompt", AgentAction)
+        name, = (call.args[0] for call in self.logger.warning.call_args_list)
+        extra = self.logger.warning.call_args.kwargs["extra"]
+        self.assertEqual(name, "model_retry")
+        self.assertEqual((extra["error_code"], extra["attempt"], extra["http_status"]), ("model_unavailable", 1, 503))
+        self.assertNotIn("SECRET", repr(self.logger.mock_calls))
+
+    def test_fallback_equal_to_primary_is_ignored(self):
+        client = self.make_client([], fallback="primary")
+        self.assertIsNone(client.fallback_model)
 
 
 if __name__ == "__main__":

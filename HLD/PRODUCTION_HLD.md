@@ -202,8 +202,11 @@ safe telemetry need stronger controls than current email/phone regexes.
 MVP defaults: 7 generative calls, 5 SQL attempts, 3 consecutive SQL failures (initial
 plus 2 repairs), 2 malformed-action corrections, 5 report calls, 1 memory write attempt
 and 300 MB scan accounting per turn. Per query: 100 MB billed bytes, 200 rows, 256 KB,
-30-second wait and 10-second API timeout. Gemini has 30-second HTTP timeout and no
-automatic transport retries. Embedding calls are separate from generative counters.
+30-second wait and 10-second API timeout. Gemini has 30-second HTTP timeout; SDK
+transport retries are disabled and the client retries transient planning failures
+once (bounded backoff/Retry-After <= 8 s), then optionally uses one configured
+fallback model. Retries are logged and do not consume the agent's 7-call budget.
+Embedding calls are separate from generative counters and are not retried.
 
 Validation/syntax errors may get controlled bounded repair. Empty output may mean
 no data or privacy suppression: check supported filters/date assumptions without
@@ -252,7 +255,7 @@ Test UX with representative nontechnical executives: ask them to perform analyti
 tasks and report search/delete flows without coaching. Measure completion rate,
 turns/time to useful answer, correction/abandonment, confirmation comprehension,
 perceived usefulness and calibrated trust. Do not reward confident wrong reports.
-Fresh-machine setup must be tested separately; 194 unit/integration tests do not
+Fresh-machine setup must be tested separately; 205 unit/integration tests do not
 establish portability or executive usability.
 
 ## 10. Observability and operations

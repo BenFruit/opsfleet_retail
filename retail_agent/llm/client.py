@@ -1,4 +1,7 @@
+import logging
 import os
+import random
+import time
 
 import httpx
 from dotenv import load_dotenv
@@ -10,6 +13,13 @@ from pydantic import BaseModel, ValidationError
 from retail_agent.observability.tracing import trace_generation
 
 T = TypeVar("T", bound=BaseModel)
+logger = logging.getLogger(__name__)
+
+# Planning calls are read-only, so transient provider failures may be retried.
+# Timeouts are NOT retried on the same model: another 30 s wait rarely helps.
+_RETRY_SAME_MODEL = frozenset({"model_unavailable", "model_rate_limited", "model_connection_failed"})
+# Failures where a different configured model may still answer.
+_TRY_FALLBACK = _RETRY_SAME_MODEL | {"model_timeout", "model_daily_quota", "model_not_found"}
 
 
 class ModelResponseError(RuntimeError):
@@ -97,7 +107,20 @@ def _response_text(response) -> str:
 
 
 class GeminiClient:
-    def __init__(self, model: str | None = None):
+    """Gemini wrapper with bounded application-level retries and optional fallback.
+
+    SDK transport retries stay disabled so every retry is explicit, logged and
+    bounded here: at most ``max_attempts`` calls to the primary model, then at
+    most one call to GEMINI_FALLBACK_MODEL when configured. Only provider/transport
+    failures are retried; invalid JSON/actions are returned to the orchestrator,
+    which owns its own correction budget.
+    """
+
+    max_attempts = 2
+    base_delay_seconds = 1.0
+    max_delay_seconds = 8.0
+
+    def __init__(self, model: str | None = None, *, fallback_model: str | None = None, sleep=time.sleep):
         load_dotenv()
 
         api_key = os.getenv("GEMINI_API_KEY")
@@ -114,7 +137,12 @@ class GeminiClient:
                 retry_options=types.HttpRetryOptions(attempts=1),
             ),
         )
-        self.last_usage: dict[str, int] = {}
+        fallback = fallback_model if fallback_model is not None else os.getenv("GEMINI_FALLBACK_MODEL", "")
+        self.fallback_model = fallback.strip() or None
+        if self.fallback_model == self.model:
+            self.fallback_model = None
+        self._sleep = sleep
+        self.last_usage: dict[str, int | str] = {}
 
     def generate(self, prompt: str) -> str:
         response = self.client.models.generate_content(
@@ -132,9 +160,50 @@ class GeminiClient:
         self, prompt: str, response_schema: type[T], *, system_instruction: str | None = None,
     ) -> T:
         self.last_usage = {}
-        with trace_generation(self.model, prompt, system_instruction) as observation:
+        model, attempts_on_model, attempt = self.model, 1, 1
+        while True:
+            try:
+                return self._generate_once(model, prompt, response_schema, system_instruction)
+            except Exception as error:
+                code, _, metadata = describe_model_error(error)
+                next_model = self._next_model(model, attempts_on_model, code, metadata)
+                if next_model is None:
+                    raise
+                delay = self._delay(attempts_on_model, metadata) if next_model == model else 0.0
+                logger.warning("model_retry", extra={
+                    "error_code": code, "attempt": attempt, "delay_ms": round(delay * 1000),
+                    "fallback": next_model != model, "model": next_model,
+                    **{key: metadata[key] for key in ("error_type", "http_status") if key in metadata},
+                })
+                if delay:
+                    self._sleep(delay)
+                attempts_on_model = attempts_on_model + 1 if next_model == model else 1
+                model, attempt = next_model, attempt + 1
+
+    def _next_model(self, model: str, attempts_on_model: int, code: str, metadata: dict) -> str | None:
+        """Same model (bounded), then the fallback once; never back to the primary."""
+        if model != self.model:
+            return None  # The fallback model gets exactly one attempt.
+        retry_after = metadata.get("retry_after_seconds")
+        if (code in _RETRY_SAME_MODEL and attempts_on_model < self.max_attempts
+                # A long Retry-After means waiting is worse than trying the fallback.
+                and (retry_after is None or retry_after <= self.max_delay_seconds)):
+            return model
+        if self.fallback_model and code in _TRY_FALLBACK:
+            return self.fallback_model
+        return None
+
+    def _delay(self, attempt: int, metadata: dict) -> float:
+        retry_after = metadata.get("retry_after_seconds")
+        if retry_after is not None:
+            return float(min(retry_after, self.max_delay_seconds))
+        backoff = self.base_delay_seconds * 2 ** (attempt - 1)
+        return min(backoff, self.max_delay_seconds) * random.uniform(0.8, 1.2)
+
+    def _generate_once(self, model: str, prompt: str, response_schema: type[T], system_instruction: str | None) -> T:
+        with trace_generation(model, prompt, system_instruction) as observation:
             response = self.client.models.generate_content(
-                model=self.model,
+                model=model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     temperature=0.1,
@@ -146,9 +215,11 @@ class GeminiClient:
                     response_json_schema=response_schema.model_json_schema(),
                 ),
             )
+            self.last_usage = {"model": model}
             usage = response.usage_metadata
             if usage is not None:
                 self.last_usage = {
+                    "model": model,
                     "input_tokens": usage.prompt_token_count or 0,
                     "output_tokens": usage.candidates_token_count or 0,
                     "total_tokens": usage.total_token_count or 0,

@@ -3,7 +3,7 @@ from datetime import date
 from decimal import Decimal
 
 from retail_agent.data.query_service import QueryResult
-from retail_agent.safety.result_guard import ResultGuardError, make_observation, render_observation
+from retail_agent.safety.result_guard import ResultGuardError, check_text, make_observation, render_observation
 from retail_agent.safety.sql_validator import validate_sql
 
 
@@ -77,6 +77,19 @@ class ResultGuardTests(unittest.TestCase):
         for value in ("person@example.com", "+1 (555) 123-4567", [1, 2], {"x": 1}, b"data", float("inf"), float("nan")):
             with self.subTest(value=value), self.assertRaises(ResultGuardError):
                 make_observation(SQL, result([{"name": value}]), max_chars=1000)
+
+    def test_phone_pattern_blocks_numbers_but_not_dated_analytical_deltas(self):
+        for text in ("+1 (555) 123-4567", "+7 (7172) 12-34-56", "call +44 20 7946 0958", "+15551234567"):
+            with self.subTest(text=text), self.assertRaises(ResultGuardError):
+                check_text(text)
+        for text in (
+            "Revenue grew +5 (2024-01-31) versus the prior month.",
+            "Orders +12 (2023-09-01 - 2023-09-30).",
+            "Buyers +150 (2024 - 2023).",
+            "Growth +15% (2024-10).",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(check_text(text), text)
 
     def test_unexpected_missing_or_duplicate_columns_rejected(self):
         for row in ({"email": "x"}, {}, {"name": "p", "extra": 1}):

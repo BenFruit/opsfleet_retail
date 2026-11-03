@@ -199,7 +199,9 @@ validation/cost denials do not consume that scan allowance.
 
 QueryService defaults: 100 MB maximum billed bytes per query, 200 result rows,
 256 KB result JSON, 30-second query wait, 10-second API timeout. Gemini has a
-30-second HTTP timeout, no automatic transport retries, and a 4,096 output-token cap.
+30-second HTTP timeout and a 4,096 output-token cap. SDK transport retries stay
+disabled; the client itself retries transient provider failures once and can
+switch to `GEMINI_FALLBACK_MODEL` (see "Model failure diagnostics").
 These controls are not a hard end-to-end deadline or an account-wide cost cap.
 Limits are defined in `AgentLimits` and `QueryLimits`.
 Dry-run failures do not spend the scan allowance: no execution was submitted.
@@ -241,7 +243,9 @@ the month before it, not current month-to-date versus a full month.
   returning them to the model. SQL lineage validation remains the primary control;
   matching result column names alone is not considered a PII guarantee.
 - Recognizable email and international-phone patterns in input/results/output are
-  rejected as an extra safeguard. This is NOT comprehensive name/address/PII
+  rejected as an extra safeguard. A phone candidate needs 10-15 digits and must not
+  contain an ISO date or year range, so analytical text such as
+  `+12 (2023-09-01 - 2023-09-30)` is not withheld. This is NOT comprehensive name/address/PII
   detection. Do not use this prototype for arbitrary sensitive free text.
 - Database strings are treated as untrusted data in the analyst instructions.
   Prompt instructions alone do not guarantee injection resistance or factuality.
@@ -432,7 +436,28 @@ CLI failures include safe codes rather than treating every exception as overload
 
 The log includes HTTP status, exception class, safe validation field names/count,
 and numeric Retry-After if available, never the raw provider error or Pydantic
-input values. Failures do not trigger automatic request retries.
+input values.
+
+**Retries and fallback (planning calls only).** SDK transport retries are disabled;
+`GeminiClient` makes every retry explicit, bounded and logged as `model_retry`:
+
+| Failure | Same model | Fallback (`GEMINI_FALLBACK_MODEL`, optional) |
+| --- | --- | --- |
+| `model_unavailable`, `model_rate_limited`, `model_connection_failed` | 1 retry after 1-2 s backoff, or Retry-After if <= 8 s | once, if the retry also fails or Retry-After > 8 s |
+| `model_timeout`, `model_daily_quota`, `model_not_found` | no | once |
+| invalid JSON/action, 400/401/403, safety blocks | no | no |
+
+Planning calls are read-only, so repeating them cannot duplicate a write.
+Invalid model output is handled by the orchestrator's separate correction budget.
+The fallback never hands back to the primary model within the same call. Worst
+case is three 30-second requests plus at most 8 s of waiting per planning step.
+Embedding calls are not retried. `agent_model_completed` records which `model`
+answered; leave the fallback empty to disable it, or set it to another enabled model ID.
+
+**Startup failures** print the failing stage (`access_config`, `gemini_client`,
+`bigquery_client`, `bigquery_schema`, `agent_init`) with the exception class
+name and a hint, and log `startup_failed` with the same metadata. The exception
+text is never printed, because it can contain paths or credential details.
 
 Structured actions use `response_json_schema=AgentAction.model_json_schema()`
 and are still validated locally by Pydantic. Passing this model through the SDK's
@@ -442,6 +467,14 @@ with a neutral greeting. This does not validate the full analytic SQL path.
 
 ```powershell
 Get-Content logs/agent.jsonl -Tail 20
+```
+
+Every query event (`query_started`, `query_dry_run_completed`, `query_completed`,
+`query_failed`) carries both `query_id` and `turn_id`, and `agent_observation`
+carries the `query_id`. Filter by `turn_id` to see one question end-to-end:
+
+```powershell
+Select-String -Path logs/agent.jsonl -Pattern '"turn_id": "TURN_ID"'
 ```
 
 ## Tests
@@ -461,7 +494,8 @@ docker compose config --quiet
 git diff --check
 ```
 
-The most recent pre-handoff run passed 194 tests including local DB integration.
+The most recent run passed 205 tests (2 opt-in DB cases skipped); the last run
+including local DB integration was the 194-test pre-handoff baseline.
 Default tests skip opt-in DB cases. Test fixtures use temporary owners and clean
 up only their own records. Model-based extraction/formatting and complete semantic
 correctness remain unproven; known manual memory failures are in

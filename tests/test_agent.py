@@ -2,7 +2,7 @@ import json
 import os
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 from langsmith import get_tracing_context
 from google.genai import errors as genai_errors
@@ -48,6 +48,7 @@ class AnalyticalAgentTests(unittest.TestCase):
         self.assertEqual(turn.scan_bytes_used, 10)
         self.service.execute.assert_called_once_with(
             REVENUE_SQL, manager_id="manager_a", scan_budget_bytes=300_000_000,
+            turn_id=ANY,
         )
         observation = self.analyst.decide.call_args.kwargs["observations"][0]
         self.assertEqual(observation["rows"], [{"revenue": 30}])

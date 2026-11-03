@@ -208,6 +208,26 @@ class QueryServiceTests(unittest.TestCase):
         self.assertIn("query_failed", emitted)
         self.assertIn("error_code", emitted)
 
+    def test_every_query_event_carries_turn_and_query_ids(self):
+        self.service.execute(SQL, manager_id="manager_a", turn_id="turn-1")
+        self.runner.execute_scoped_query.side_effect = google_errors.ServiceUnavailable("SECRET")
+        with self.assertRaises(QueryServiceError) as caught:
+            self.service.execute(SQL, manager_id="manager_a", turn_id="turn-2")
+        self.assertRegex(caught.exception.query_id, r"^[0-9a-f]{32}$")
+        events = {}
+        for call in self.logger.info.call_args_list + self.logger.warning.call_args_list:
+            events.setdefault(call.args[0], []).append(call.kwargs["extra"])
+        for name in ("query_started", "query_dry_run_completed", "query_completed", "query_failed"):
+            with self.subTest(event=name):
+                for extra in events[name]:
+                    self.assertIn(extra["turn_id"], {"turn-1", "turn-2"})
+                    self.assertRegex(extra["query_id"], r"^[0-9a-f]{32}$")
+        failed = events["query_failed"][0]
+        self.assertEqual(failed["turn_id"], "turn-2")
+        self.assertEqual(failed["query_id"], caught.exception.query_id)
+        self.assertEqual(failed["error_type"], "ServiceUnavailable")
+        self.assertNotIn("SECRET", repr(events))
+
     def test_limits_are_validated(self):
         cases = [
             {"maximum_bytes_billed": 0}, {"max_rows": -1}, {"max_rows": True},

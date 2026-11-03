@@ -15,6 +15,7 @@ _FIELDS = (
     "report_calls",
     "persona_version",
     "memory_calls",
+    "model", "attempt", "delay_ms", "fallback",
 )
 
 

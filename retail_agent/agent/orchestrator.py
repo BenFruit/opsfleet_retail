@@ -351,12 +351,17 @@ class AnalyticalAgent:
         reserved = min(remaining, self.query_service.limits.maximum_bytes_billed)
         spent = reserved
         try:
-            result = self.query_service.execute(action.sql, manager_id=self.manager_id, scan_budget_bytes=remaining)
+            result = self.query_service.execute(
+                action.sql, manager_id=self.manager_id, scan_budget_bytes=remaining,
+                turn_id=state["turn_id"],
+            )
             spent = max(result.estimated_bytes, result.bytes_billed or 0, result.bytes_processed or 0)
             observation = make_observation(action.sql, result, max_chars=self.limits.max_observation_chars)
             errors = 0
         except QueryServiceError as error:
             observation = {"status": "error", "code": error.code, "message": str(error)}
+            if error.query_id:
+                observation["query_id"] = error.query_id
             if action.action == "query":
                 try:
                     observation["attempted_sql"] = check_text(action.sql)[:self.limits.max_observation_chars // 2]
@@ -380,7 +385,8 @@ class AnalyticalAgent:
             "scan_bytes_used": state["scan_bytes_used"] + spent,
         }
         logger.info("agent_observation", extra={
-            "turn_id": state["turn_id"], "status": observation["status"],
+            "turn_id": state["turn_id"], "query_id": observation.get("query_id"),
+            "status": observation["status"],
             "error_code": observation.get("code"), "query_count": update["queries"],
         })
         if errors >= self.limits.max_consecutive_errors or observation.get("code") in {

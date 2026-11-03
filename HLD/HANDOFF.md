@@ -1,4 +1,4 @@
-# Current handoff — 2 November 2026
+# Current handoff — 3 November 2026
 
 This replaces the obsolete October conversation snapshot. No old conversation is
 required to continue. Read root AGENTS.md, README.md and this HLD directory.
@@ -7,11 +7,21 @@ must never be presented as implemented.
 
 ## Baseline and pending work
 
-Last committed baseline inspected: `6a0198c feat: add saved reports, unified SQL
-analytics and editable persona` (before that: `c65654b Add local langfuse tracing`,
-`5803666 First MVP`). Uncommitted feature changes add user memory, migration 003,
-graph/CLI/prompt/embedding/log wiring and tests. Documentation is being consolidated
-in the same change. No commit or push has been authorized.
+Last committed baseline: `a2ffeb3 feat: add persistent user memory and consolidate
+architecture docs`. Uncommitted on top of it (3 November review, fix batch 1):
+
+- `check_text` phone pattern no longer withholds analytical prose such as
+  `+12 (2023-09-01 - 2023-09-30)`: candidates need 10-15 digits and no ISO date/year range.
+- Every `query_*` log event carries `turn_id` and `query_id`; failed query
+  observations and `agent_observation` carry `query_id`; backend failures log the
+  exception class name.
+- `GeminiClient` retries transient planning failures once (bounded backoff,
+  Retry-After <= 8 s) and optionally calls `GEMINI_FALLBACK_MODEL` once; each
+  retry logs `model_retry`, and `agent_model_completed` records the answering model.
+- Startup failures print/log the failing stage and exception class (never its text).
+
+Older `model_failed` codes in existing local logs predate error classification;
+current failures are classified. No commit or push has been authorized.
 
 ## Implemented
 
@@ -79,7 +89,8 @@ Other limitations:
 
 ## Verification record
 
-After this documentation consolidation, 194 tests passed with local PostgreSQL:
+After fix batch 1, 205 tests passed offline (2 opt-in DB tests skipped). The
+DB-integration run below was last done on the 194-test pre-handoff baseline:
 
 ```powershell
 $env:RETAIL_TEST_POSTGRES='1'
@@ -91,7 +102,7 @@ loading, mixed query/remember orderings, name retrieval after reset and owner is
 Temporary test-owner fixtures were cleaned up; existing user data was preserved.
 These tests do not prove general intent/report quality. A fresh-machine setup has
 not yet been exercised. Compose configuration and local Markdown links also passed
-validation; Mermaid source was synchronized but not renderer-tested.
+validation. All five Mermaid diagrams render with mmdc (checked 3 November).
 
 ## Moving to another computer
 

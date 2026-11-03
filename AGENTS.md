@@ -91,4 +91,4 @@ Git transfers code/docs, not local DB data, remote persona contents or credentia
 Fresh-machine setup and assessment-quality evaluation remain explicit next steps.
 Update `HLD/HANDOFF.md` and relevant focused docs after significant decisions;
 keep Mermaid diagrams and production-vs-MVP labels synchronized. Do not claim
-194 regression tests or isolated live successes prove semantic correctness.
+the regression suite (205 offline tests) or isolated live successes prove semantic correctness.

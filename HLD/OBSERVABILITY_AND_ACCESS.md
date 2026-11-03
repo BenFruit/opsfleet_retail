@@ -17,7 +17,10 @@ LangSmith package is still a transitive dependency of LangGraph.
 Enable explicitly with `LANGFUSE_TRACING_ENABLED=true`, local project public and
 secret keys, and `LANGFUSE_BASE_URL=http://localhost:3000`. There is no fallback
 to a cloud endpoint when configuration is missing. Tracing is off by default.
-Existing local allowlisted JSON logs remain unchanged.
+Local allowlisted JSON logs are the always-on layer. Correlation keys: every
+`query_*` event has `turn_id` + `query_id`; `agent_observation` links the turn to
+its `query_id`; `model_retry` and `agent_model_completed` record retries and the
+answering `model`; `startup_failed` records the failing startup stage.
 There is no separate span for every SQL validation/dry-run/execution stage: those
 currently live inside the `query` node. Controlled query failures are observation
 data, so a successful node/run can still contain an error observation. Inspect

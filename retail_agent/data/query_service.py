@@ -45,10 +45,11 @@ class QueryLimits:
 class QueryServiceError(Exception):
     """Stable, safe error contract; never includes SQL/backend exception text."""
 
-    def __init__(self, code: str, message: str, *, stage: str = "unknown"):
+    def __init__(self, code: str, message: str, *, stage: str = "unknown", query_id: str | None = None):
         super().__init__(message)
         self.code = code
         self.stage = stage
+        self.query_id = query_id
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,7 @@ class QueryService:
 
     def execute(
         self, sql: str, *, manager_id: str, scan_budget_bytes: int | None = None,
+        turn_id: str | None = None,
     ) -> QueryResult:
         """Use identity supplied by the application, never identity from the LLM.
 
@@ -83,7 +85,9 @@ class QueryService:
         query_id = uuid4().hex
         started = monotonic()
         stage = "authorization"
-        logger.info("query_started", extra={"query_id": query_id})
+        # turn_id links every query event to the agent turn in logs/agent.jsonl.
+        correlation = {"query_id": query_id, "turn_id": turn_id}
+        logger.info("query_started", extra=correlation)
         try:
             byte_limit = self.limits.maximum_bytes_billed
             if scan_budget_bytes is not None:
@@ -122,7 +126,7 @@ class QueryService:
             if estimated_bytes > byte_limit:
                 raise QueryServiceError("cost_limit", "Query exceeds the configured scan budget.")
             logger.info("query_dry_run_completed", extra={
-                "query_id": query_id, "estimated_bytes": estimated_bytes,
+                **correlation, "estimated_bytes": estimated_bytes,
             })
 
             stage = "execution"
@@ -155,7 +159,7 @@ class QueryService:
                 columns=columns, query_context=context,
             )
             logger.info("query_completed", extra={
-                "query_id": query_id, "row_count": len(result.rows),
+                **correlation, "row_count": len(result.rows),
                 "truncated": result.truncated, "result_bytes": size,
                 "bytes_processed": result.bytes_processed, "bytes_billed": result.bytes_billed,
                 "duration_ms": round((monotonic() - started) * 1000),
@@ -163,26 +167,30 @@ class QueryService:
             return result
         except QueryServiceError as error:
             error.stage = stage
+            error.query_id = query_id
             self._log_failure(
-                query_id, stage, error.code, started,
+                correlation, stage, error.code, started,
                 validation_reason=str(error) if stage == "validation" else None,
             )
             raise
         except Exception as error:
             code, message = self._safe_backend_error(error)
-            self._log_failure(query_id, stage, code, started)
-            raise QueryServiceError(code, message, stage=stage) from None
+            self._log_failure(correlation, stage, code, started, error_type=type(error).__name__)
+            raise QueryServiceError(code, message, stage=stage, query_id=query_id) from None
 
     @staticmethod
     def _log_failure(
-        query_id: str, stage: str, code: str, started: float,
-        validation_reason: str | None = None,
+        correlation: dict, stage: str, code: str, started: float,
+        validation_reason: str | None = None, error_type: str | None = None,
     ) -> None:
-        logger.warning("query_failed", extra={
-            "query_id": query_id, "stage": stage, "error_code": code,
+        extra = {
+            **correlation, "stage": stage, "error_code": code,
             "duration_ms": round((monotonic() - started) * 1000),
             "validation_reason": validation_reason,
-        })
+        }
+        if error_type is not None:
+            extra["error_type"] = error_type  # Exception class name only, never its text.
+        logger.warning("query_failed", extra=extra)
 
     @staticmethod
     def _safe_backend_error(error: Exception) -> tuple[str, str]:
