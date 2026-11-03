@@ -7,6 +7,7 @@ and a premature or ungrounded answer is sent back for one bounded repair.
 
 import logging
 
+from retail_agent.agent.feedback import REPAIR_REQUIRED, ungrounded_numbers
 from retail_agent.presentation import remove_markdown_tables, render_observation, render_reports
 from retail_agent.safety.grounding import ungrounded_figures
 
@@ -61,7 +62,7 @@ def finalize_answer(state, answer: str, update: dict, *, limits, authorized_bran
                 state,
                 update,
                 "repair_required",
-                "No SQL completed successfully. Repair the previous attempted SQL now using query, unless the request is prohibited; in that case explain the safety restriction. Never substitute a different grouping or invent totals.",
+                REPAIR_REQUIRED,
             )
         # An answer following only failures cannot pretend to deliver fresh
         # results (including "I will fetch it" placeholder answers).
@@ -91,9 +92,7 @@ def finalize_answer(state, answer: str, update: dict, *, limits, authorized_bran
                 state,
                 update,
                 "ungrounded_numbers",
-                f"These figures in your prose do not match any checked value or the sum/difference of two: {', '.join(ungrounded[:10])}. "
-                "Do not add up or average many rows in prose. Run a query that computes the total/average, "
-                "or quote only checked values, then answer again.",
+                ungrounded_numbers(ungrounded),
             )
 
     text = (prose or "Here are the checked results.") if checked else answer

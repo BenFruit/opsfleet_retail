@@ -131,7 +131,7 @@ class AnalyticalAgentTests(unittest.TestCase):
         self.analyst.decide.return_value = answer()
         self.agent.ask("Question")
         self.agent.reset()
-        self.assertEqual(self.agent.history, [])
+        self.assertEqual(self.agent.session.history, [])
 
     def test_invalid_sql_can_be_repaired_once(self):
         self.analyst.decide.side_effect = [query("SELECT * FROM x"), query(), answer()]
@@ -296,7 +296,7 @@ class AnalyticalAgentTests(unittest.TestCase):
         turn = self.agent.ask("Revenue?")
         self.assertEqual(self.analyst.decide.call_count, 1)
         self.assertNotIn("secret@example.com", turn.answer)
-        self.assertNotIn("secret@example.com", json.dumps(self.agent.history))
+        self.assertNotIn("secret@example.com", json.dumps(self.agent.session.history))
 
     def test_unexpected_result_column_is_withheld(self):
         self.analyst.decide.return_value = query()
@@ -308,7 +308,7 @@ class AnalyticalAgentTests(unittest.TestCase):
         turn = self.agent.ask("Find secret@example.com")
         self.assertIn("remove personal", turn.answer)
         self.analyst.decide.assert_not_called()
-        self.assertEqual(self.agent.history, [])
+        self.assertEqual(self.agent.session.history, [])
 
     def test_bad_final_text_is_not_displayed(self):
         self.analyst.decide.return_value = answer("Contact secret@example.com")
@@ -330,7 +330,7 @@ class AnalyticalAgentTests(unittest.TestCase):
         self.analyst.decide.return_value = answer("Brief answer")
         for question in ("One", "Two", "Three"):
             self.agent.ask(question)
-        self.assertEqual([turn["question"] for turn in self.agent.history], ["Two", "Three"])
+        self.assertEqual([turn["question"] for turn in self.agent.session.history], ["Two", "Three"])
 
     def test_external_langsmith_tracing_stays_disabled_even_if_enabled_in_environment(self):
         def decide(**kwargs):

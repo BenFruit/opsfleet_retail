@@ -50,7 +50,7 @@ class AgentGroundingTests(unittest.TestCase):
         self.logger.warning.assert_any_call(
             "answer_ungrounded_figures", extra={"turn_id": ANY, "row_count": 1, "status": "repair"}
         )
-        self.assertIsNotNone(self.agent.last_answer)  # Feedback is not a failed query.
+        self.assertIsNotNone(self.agent.session.last_answer)  # Feedback is not a failed query.
 
     def test_when_budget_is_spent_the_answer_is_delivered_with_a_note(self):
         self.agent.limits = type(self.agent.limits)(max_action_retries=1)

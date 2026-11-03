@@ -47,7 +47,7 @@ class ReportGraphTests(unittest.TestCase):
         self.analyst.decide.return_value = AgentAction(
             action="report", report=ReportRequest(operation="save", query="")
         )
-        self.agent.history.clear()
+        self.agent.session.history.clear()
         self.agent.ask("Save")
         self.agent.ask("Save again")
         self.assertEqual(self.repo.save.call_args.kwargs["content"], "Checked narrative")
@@ -55,8 +55,8 @@ class ReportGraphTests(unittest.TestCase):
         self.queries.execute.assert_not_called()
 
     def test_invalid_save_action_is_repaired_twice_without_duplicate_writes(self):
-        self.agent.last_answer = "Original checked answer"
-        self.agent.last_answer_brands = ["Brand A"]
+        self.agent.session.last_answer = "Original checked answer"
+        self.agent.session.last_answer_brands = ["Brand A"]
         try:
             AgentAction.model_validate_json('{"action":"report","report":{"operation":"save"}}')
         except ValueError as error:
@@ -92,16 +92,16 @@ class ReportGraphTests(unittest.TestCase):
         self.assertEqual(self.analyst.decide.call_count, calls)
 
     def test_reset_changes_conversation_and_clears_snapshot_and_confirmation(self):
-        previous = self.agent.conversation_id
-        self.agent.last_answer = "Old"
+        previous = self.agent.session.conversation_id
+        self.agent.session.last_answer = "Old"
         self.repo.preview_delete.return_value = [row()]
         self.analyst.decide.return_value = AgentAction(
             action="report", report=ReportRequest(operation="prepare_delete", scope="conversation", query="")
         )
         self.agent.ask("Delete conversation reports")
         self.agent.reset()
-        self.assertNotEqual(previous, self.agent.conversation_id)
-        self.assertIsNone(self.agent.last_answer)
+        self.assertNotEqual(previous, self.agent.session.conversation_id)
+        self.assertIsNone(self.agent.session.last_answer)
         self.assertIsNone(self.library.pending)
 
     def test_report_search_is_model_observation_with_deterministic_sources(self):
@@ -135,18 +135,18 @@ class ReportGraphTests(unittest.TestCase):
         self.assertEqual(turn.model_calls, 1)
 
     def test_db_failure_is_not_reported_as_success_and_does_not_overwrite_snapshot(self):
-        self.agent.last_answer = "Original"
-        self.agent.last_answer_brands = ["Brand A"]
+        self.agent.session.last_answer = "Original"
+        self.agent.session.last_answer_brands = ["Brand A"]
         self.repo.save.side_effect = ReportError("Report storage is unavailable.")
         self.analyst.decide.return_value = AgentAction(
             action="report", report=ReportRequest(operation="save", query="")
         )
         self.assertIn("unavailable", self.agent.ask("Save").answer)
-        self.assertEqual(self.agent.last_answer, "Original")
+        self.assertEqual(self.agent.session.last_answer, "Original")
 
     def test_embedding_failure_is_a_controlled_answer(self):
-        self.agent.last_answer = "Original"
-        self.agent.last_answer_brands = ["Brand A"]
+        self.agent.session.last_answer = "Original"
+        self.agent.session.last_answer_brands = ["Brand A"]
         self.embedder.embed.side_effect = EmbeddingError("Embedding service is unavailable.")
         self.analyst.decide.return_value = AgentAction(
             action="report", report=ReportRequest(operation="save", query="")

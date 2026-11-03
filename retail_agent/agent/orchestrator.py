@@ -6,6 +6,7 @@ and conversation.py.
 """
 
 import logging
+from contextlib import suppress
 from time import monotonic
 from uuid import uuid4
 
@@ -14,8 +15,9 @@ from langsmith import tracing_context
 
 from retail_agent.agent.answer import PARTIAL_PREFIX, finalize_answer, partial_answer
 from retail_agent.agent.commands import is_command, run_command
-from retail_agent.agent.conversation import append_turn, is_snapshot_answer
+from retail_agent.agent.feedback import MEMORY_ALREADY_ATTEMPTED, REJECTED_ACTION
 from retail_agent.agent.models import AgentLimits, AgentState, TurnResult
+from retail_agent.agent.session import ChatSession
 from retail_agent.data.query_service import QueryService, QueryServiceError
 from retail_agent.llm.analyst import Analyst
 from retail_agent.llm.embeddings import EmbeddingError
@@ -64,15 +66,10 @@ class AnalyticalAgent:
         self.query_service = query_service
         self.manager_id = manager_id
         self.limits = limits if limits is not None else AgentLimits()
-        self.history: list[dict] = []
-        self.first_question: str | None = None
-        self.history_truncated = False
         self.reports = reports
         self.memory = memory
         self.golden = golden
-        self.conversation_id = uuid4().hex
-        self.last_answer: str | None = None
-        self.last_answer_brands: list[str] = []
+        self.session = ChatSession()
 
         graph = StateGraph(AgentState)
         graph.add_node("plan", self._plan)
@@ -107,12 +104,7 @@ class AnalyticalAgent:
     def reset(self) -> None:
         if self.reports is not None:
             self.reports.cancel()
-        self.conversation_id = uuid4().hex
-        self.last_answer = None
-        self.last_answer_brands = []
-        self.history.clear()
-        self.first_question = None
-        self.history_truncated = False
+        self.session = ChatSession()
 
     def ask(self, question: str) -> TurnResult:
         if isinstance(question, str):
@@ -120,7 +112,7 @@ class AnalyticalAgent:
             if is_command(command):
                 return TurnResult(
                     run_command(
-                        command, memory=self.memory, reports=self.reports, conversation_id=self.conversation_id
+                        command, memory=self.memory, reports=self.reports, conversation_id=self.session.conversation_id
                     ),
                     0,
                     0,
@@ -131,8 +123,7 @@ class AnalyticalAgent:
         rejection = self._reject_question(question)
         if rejection:
             return TurnResult(rejection, 0, 0, 0)
-        if self.first_question is None:
-            self.first_question = question
+        self.session.start_question(question)
 
         state = self._new_state(question)
         started = monotonic()
@@ -154,11 +145,7 @@ class AnalyticalAgent:
             logger.warning("agent_turn_failed", extra={"turn_id": state["turn_id"], "error_code": "graph_failed"})
             return TurnResult("Analysis could not be completed. Please try again.", 0, 0, 0)
 
-        if is_snapshot_answer(result):
-            self.last_answer = result["answer"]
-            self.last_answer_brands = list(self.allowed_brands)
-        if append_turn(self.history, question, result, self.limits):
-            self.history_truncated = True
+        self.session.record_turn(question, result, brands=self.allowed_brands, limits=self.limits)
         logger.info(
             "agent_turn_completed",
             extra={
@@ -195,7 +182,7 @@ class AnalyticalAgent:
             "action_retries": 0,
             "report_calls": 0,
             "question": question,
-            "history": list(self.history),
+            "history": list(self.session.history),
             "observations": [],
             "action": None,
             "answer": "",
@@ -218,7 +205,7 @@ class AnalyticalAgent:
                 logger.warning("user_memory_load_failed", extra={"error_code": "memory_unavailable"})
         if self.golden is not None:
             # Every model step in this turn sees the same examples.
-            previous = self.history[-1]["question"] if self.history else None
+            previous = self.session.previous_question
             state["golden"] = self.golden.retrieve(
                 state["question"], previous_question=previous, turn_id=state["turn_id"]
             )
@@ -257,7 +244,7 @@ class AnalyticalAgent:
                         {
                             "status": "memory",
                             "saved": False,
-                            "message": "Memory was already attempted this turn. Do not retry the write; continue the remaining analysis or answer.",
+                            "message": MEMORY_ALREADY_ATTEMPTED,
                         },
                     ],
                 }
@@ -279,10 +266,10 @@ class AnalyticalAgent:
             "access_context": {"authorized_brands": self.allowed_brands},
             "session_context": {
                 "reports_available": self.reports is not None,
-                "has_answer_to_save": self.last_answer is not None,
+                "has_answer_to_save": self.session.last_answer is not None,
                 "memory_available": self.memory is not None,
-                "first_question": self.first_question,
-                "history_truncated": self.history_truncated,
+                "first_question": self.session.first_question,
+                "history_truncated": self.session.history_truncated,
             },
             "budget": {
                 "report_calls": self.limits.max_report_calls - state["report_calls"],
@@ -324,7 +311,7 @@ class AnalyticalAgent:
                     {
                         "status": "error",
                         "code": code,
-                        "message": "Your previous response was rejected before its proposed action executed. Earlier successful tool results remain valid; do not repeat successful writes. Return ONE corrected JSON action: query with SQL only, report with a valid request only (query is required, use empty string when not searching), remember with remember.memories strings only, or answer with text only. Never use a demographic action. Do not claim the rejected action succeeded.",
+                        "message": REJECTED_ACTION,
                     },
                 ],
             }
@@ -366,9 +353,9 @@ class AnalyticalAgent:
             # replacement or an in-progress answer from this invocation.
             observation = self.reports.execute(
                 request,
-                conversation_id=self.conversation_id,
-                last_answer=self.last_answer,
-                last_brands=self.last_answer_brands,
+                conversation_id=self.session.conversation_id,
+                last_answer=self.session.last_answer,
+                last_brands=self.session.last_answer_brands,
             )
             if request.operation in {"save", "open", "list", "prepare_delete"} or not observation.get("reports"):
                 update["answer"] = render_reports(observation)
@@ -412,12 +399,10 @@ class AnalyticalAgent:
             observation = {"status": "error", "code": error.code, "message": str(error)}
             if error.query_id:
                 observation["query_id"] = error.query_id
-            if action.action == "query":
-                try:
-                    observation["attempted_sql"] = check_text(action.sql)[: self.limits.max_observation_chars // 2]
-                    observation["attempted_sql_truncated"] = len(action.sql) > self.limits.max_observation_chars // 2
-                except ResultGuardError:
-                    pass  # Do not echo suspicious literals back into model input.
+            # Echo the attempted SQL so the model can repair it, unless it contains suspicious literals.
+            with suppress(ResultGuardError):
+                observation["attempted_sql"] = check_text(action.sql)[: self.limits.max_observation_chars // 2]
+                observation["attempted_sql_truncated"] = len(action.sql) > self.limits.max_observation_chars // 2
             errors = state["consecutive_errors"] + 1
             if error.stage in {"authorization", "validation", "dry_run"} or error.code in {
                 "access_denied",
