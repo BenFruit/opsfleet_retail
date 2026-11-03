@@ -9,6 +9,7 @@ compromises and production proposals. Do not rely on a previous chat session.
 
 Reading order:
 1. `HLD/HANDOFF.md` — current decisions, issues, verification and next priorities.
+   Current refactoring work: `HLD/REFACTOR_PLAN.md`.
 2. `README.md` — setup, configuration, CLI and portability.
 3. `HLD/README.md`, `HLD/task.txt`, `HLD/STAKEHOLDER_POLICY.md`.
 4. `HLD/PRODUCTION_HLD.md` and relevant focused HLD documents.
@@ -108,7 +109,6 @@ messages or PR descriptions. Commit on the current branch; never create new
 branches. Commit and push only when the developer asks.
 
 Git transfers code/docs, not local DB data, remote persona contents or credentials.
-Fresh-machine setup and assessment-quality evaluation remain explicit next steps.
 Update `HLD/HANDOFF.md` and relevant focused docs after significant decisions;
 keep Mermaid diagrams and production-vs-MVP labels synchronized. Do not claim
-the regression suite (241 tests) or the 15-case answer evaluation or isolated live successes prove semantic correctness.
+the regression suite (244 tests) or the 15-case answer evaluation or isolated live successes prove semantic correctness.

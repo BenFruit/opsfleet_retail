@@ -7,55 +7,18 @@ must never be presented as implemented.
 
 ## Baseline and pending work
 
-Last committed baseline: `a2ffeb3 feat: add persistent user memory and consolidate
-architecture docs`. Uncommitted on top of it (3 November review, fix batch 1):
+Refactoring steps 1-4 end at `00d402c`, which is pushed to `origin/master`.
+Fix batches 1-4 from the 3 November review (resilience/logging, Golden
+Knowledge, answer evaluation, documentation and metrics) are committed and
+described in PRODUCTION_HLD.md, GOLDEN_KNOWLEDGE.md and EVALUATION.md.
 
-- `check_text` phone pattern no longer withholds analytical prose such as
-  `+12 (2023-09-01 - 2023-09-30)`: candidates need 10-15 digits and no ISO date/year range.
-- Every `query_*` log event carries `turn_id` and `query_id`; failed query
-  observations and `agent_observation` carry `query_id`; backend failures log the
-  exception class name.
-- `GeminiClient` retries transient planning failures once (bounded backoff,
-  Retry-After <= 8 s) and optionally calls `GEMINI_FALLBACK_MODEL` once; each
-  retry logs `model_retry`, and `agent_model_completed` records the answering model.
-- Startup failures print/log the failing stage and exception class (never its text).
+Current work: code refactoring, see [REFACTOR_PLAN.md](REFACTOR_PLAN.md). Steps
+1-4 are done; steps A-G come from a backend developer's code review. A live chat
+smoke test after steps 3-4 is still pending (prompt assembly and wiring changed shape).
 
-Fix batch 2 (Golden Knowledge, uncommitted): 12 reviewed trios in `golden/trios/`,
-`retail_agent/golden/` (model, hash-based atomic ingestion, hybrid retrieval,
-evaluation), migration 004 with a separate `golden_ingest` writer role, retrieval
-wired before planning, `Method:` citation, 16 new tests. Live: migration applied to
-the existing volume, BigQuery dry run passed for all trios, ingestion idempotent,
-retrieval eval recall@3 0.96 at threshold 0.65, two live questions retrieved the
-expected trio. `customer-churn-proxy` was revised to v2 after the live run.
-The configured Google Doc persona currently appends "Yahooo" to answers: test
-content to remove before the demo. ADC lacks a quota project (warning only).
-
-Fix batch 3 (answer evaluation, uncommitted): `retail_agent/evaluation/answers.py`
-and `evals/answer_cases.json` (15 live cases, reference SQL, LLM judge, A/B with
-and without Golden); numeric grounding check in the agent (`safety/grounding.py`)
-with one SQL correction or a visible note; prompt rule against prose arithmetic;
-`quarterly-business-review` v2. Live result: Golden 15/15 deterministic, judge
-1.00; baseline 14/15, judge 0.60. The judge missed a wrong prose total; numeric
-faithfulness is therefore deterministic. Details in EVALUATION.md.
-
-Fix batch 4 (documentation and observability, uncommitted): PRODUCTION_HLD.md
-rewritten as the main reviewer-facing design (requirement map, technology choices
-and framework experience, data handling, per-requirement status, error table,
-extensibility, rollout) with three new diagrams (production serving, request
-sequence, learning loop) embedded and kept in sync by `tests/test_docs.py`, which
-also checks relative links. README condensed to quick start, live example session,
-CLI usage, configuration, troubleshooting and layout. New
-`retail_agent/observability/metrics.py` (agent metrics + per-turn timeline);
-`agent_turn_completed` now logs `status` ok/partial.
-
-User data note: manager_a's memory entry "Appends Yahooo after each answer." (the
-source of "Yahooo" in answers, not the persona doc) was removed with /forget at
-the developer's request; the name and "Prefers long answers." entries remain.
-Exploratory files (inspect_*.py, inspect_schema.ipynb, "access.example copy.json")
-were removed from Git at the developer's request and kept on disk (now ignored).
-
-Older `model_failed` codes in existing local logs predate error classification;
-current failures are classified. No commit or push has been authorized.
+User data note: manager_a's memory entry "Appends Yahooo after each answer." was
+removed with /forget at the developer's request; the name and "Prefers long
+answers." entries remain. ADC lacks a quota project (warning only).
 
 ## Implemented
 
@@ -124,20 +87,21 @@ Other limitations:
 
 ## Verification record
 
-After fix batch 1, 205 tests passed offline (2 opt-in DB tests skipped). The
-DB-integration run below was last done on the 194-test pre-handoff baseline:
-
-```powershell
-$env:RETAIL_TEST_POSTGRES='1'
-uv run python -B -m unittest discover -s tests -q
-```
+After refactoring step 4: 244 tests passed, including the opt-in PostgreSQL
+tests (`RETAIL_TEST_POSTGRES=1`), and the built wheel contains the prompt file.
+The 15-case answer evaluation was last run before the refactoring (Golden 15/15
+deterministic, judge 1.00; baseline 14/15, judge 0.60; see EVALUATION.md).
 
 Live smoke tests covered SQL/follow-ups, age buckets, report lifecycle, persona URL
 loading, mixed query/remember orderings, name retrieval after reset and owner isolation.
 Temporary test-owner fixtures were cleaned up; existing user data was preserved.
-These tests do not prove general intent/report quality. A fresh-machine setup has
-not yet been exercised. Compose configuration and local Markdown links also passed
-validation. All five Mermaid diagrams render with mmdc (checked 3 November).
+These tests do not prove general intent/report quality. All Mermaid diagrams
+render with mmdc; `tests/test_docs.py` keeps embedded copies and links in sync.
+
+Fresh-clone check (3 November, Windows): clone from GitHub, `uv sync` from
+scratch, compose config, offline tests, Golden check/BigQuery dry run/idempotent
+ingest, one CLI question with a Golden precedent, clean `git status`. A temporary
+pgvector container confirmed that migrations 001-004 initialize a fresh volume.
 
 ## Moving to another computer
 
@@ -153,35 +117,16 @@ Google ADC, logs or the remote Google Doc contents. A clean clone starts with em
 local application data. Transfer needed data through reviewed backup/restore, not
 public Git. Do not copy credentials into documentation or commits.
 
-## Publication checks and next priorities
+## Next priorities
 
-1. Review `git status`/diff and include new memory files, migration, tests and docs.
-2. Ten generated `.pyc` files were removed from Git's index only; local copies were
-   preserved and existing ignore rules prevent re-addition. These removals are staged.
-   `inspect_schema.ipynb`, inspection scripts and `access.example copy.json` were
-   preserved. The duplicate access file contains placeholders; the notebook contains
-   public schema inspection outputs and a local warning/path, while notebook and
-   `inspect_schema.py` include a developer-specific Google project ID. They are not
-   needed by the CLI. Decide whether to include these exploratory artifacts publicly.
-   This was a narrow hygiene check, not a complete secret/history audit. Previously
-   committed personal context remains in history after editing; no history was rewritten.
-3. Reproduce setup on a clean computer and record failures honestly.
-4. Build a small intent/SQL/report/UX evaluation dataset and test the production-design
-   assumptions, prioritizing business grain, status and calendar boundaries.
-5. Done: Golden Knowledge, answer evaluation, design rewrite, diagrams, README.
-   Remaining: developer review of the experience paragraph in PRODUCTION_HLD.md §3.
-
-Fresh-clone check (3 November, Windows): cloned from GitHub into a new folder and
-followed the README: `uv sync` from scratch (new .venv, 76 packages), compose
-config, 241 offline tests, Golden check/BigQuery dry run/idempotent ingest, one
-CLI question answered with a Golden precedent, clean `git status` afterwards.
-`.env` and `access.local.json` were copied from the developer's setup instead of
-edited by hand. A temporary pgvector container on port 5434 (removed afterwards)
-confirmed that migrations 001-004 initialize a fresh volume, ingest indexed 12 new
-trios, and all 241 tests including PostgreSQL passed against it.
-6. Before real data use: trace redaction, authenticated access/data-layer isolation,
-   secret management, backups and stronger adversarial/privacy evaluation.
+1. A live chat smoke test of steps 1-4, then refactoring steps A-G
+   ([REFACTOR_PLAN.md](REFACTOR_PLAN.md)).
+2. Developer review of the experience paragraph in PRODUCTION_HLD.md §3.
+3. Build a larger intent/SQL/report/UX evaluation set, prioritizing business
+   grain, status and calendar boundaries.
+4. Before real data use: trace redaction, authenticated access/data-layer
+   isolation, secret management, backups and stronger adversarial/privacy evaluation.
 
 Do not change memory semantics, entitlements, thresholds or safety scope without
-agreement. No Docker volume removal, Git history rewriting, commit or push is
-part of this handoff request.
+agreement. No Docker volume removal, Git history rewriting, commit or push
+without the developer's explicit request.
