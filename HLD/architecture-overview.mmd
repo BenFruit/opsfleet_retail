@@ -1,5 +1,5 @@
 flowchart LR
-    U["Operator CLI - implemented prototype"] --> APP["main.py / AnalyticalAgent"]
+    U["Operator CLI - implemented prototype"] --> APP["main.py -> ChatApplication -> AnalyticalAgent"]
     ACCESS["Trusted startup manager-brand mapping"] --> APP
     DOC["Optional style-only Google Doc"] --> APP
     APP <--> LLM["Google Gemini API - remote"]

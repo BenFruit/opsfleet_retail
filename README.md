@@ -6,10 +6,15 @@ with action items. It plans with Gemini, queries BigQuery
 (`bigquery-public-data.thelook_ecommerce`) through a safety layer that enforces
 PII rules and brand-level access in code, and reuses reviewed analyst knowledge.
 
-**Read next:** [High-level design](HLD/PRODUCTION_HLD.md) (architecture, technology
-choices, every requirement, error handling, production path) ·
-[Golden Knowledge](HLD/GOLDEN_KNOWLEDGE.md) · [Evaluation](HLD/EVALUATION.md) ·
-[all design documents](HLD/README.md)
+## For reviewers: where to look
+
+| If you have | Read |
+| --- | --- |
+| 2 minutes | The [requirement table](#what-the-prototype-does) below and the [example session](#example-session) (a real run, unedited) |
+| 15 minutes | [High-level design](HLD/PRODUCTION_HLD.md): architecture diagrams, technology choices, every requirement, error handling, rollout |
+| More | [All design documents](HLD/README.md): Golden Knowledge, evaluation, query safety, reports, memory, persona, observability |
+| To run it | [Quick start](#quick-start): about 10 minutes on a machine with Docker and a Google account |
+| The code | [Repository layout](#repository-layout); start at `retail_agent/agent/orchestrator.py` and `retail_agent/sql/` |
 
 ## What the prototype does
 
@@ -20,67 +25,114 @@ choices, every requirement, error handling, production path) ·
 | Destructive operations | Report deletion shows a frozen preview; only a separate `/confirm` deletes |
 | Learning loop | Explicit user preferences (`remember ...`); reviewed trio updates through re-ingestion |
 | Resilience | SQL self-repair (initial + 2), model retry + fallback model, cost caps, graceful degradation of every optional dependency |
-| Quality assurance | 284 tests, retrieval evaluation, live answer evaluation with Golden on/off A/B |
+| Quality assurance | 287 tests, retrieval evaluation, live answer evaluation with Golden on/off A/B |
 | Observability | Correlated JSON events, metrics report, per-turn timeline, optional local Langfuse |
 | Persona | Tone and structure editable in a Google Doc, applied on the next question without redeploying |
 
 ## Quick start
 
-Prerequisites: Python 3.13+, Google Cloud CLI, Docker (Docker Desktop on
-Windows/macOS) for the application database, a Google Cloud project with the
-BigQuery API enabled (the free tier is enough), and a Gemini API key from Google
-AI Studio. [uv](https://docs.astral.sh/uv/) is recommended; plain pip works too.
-Run every command from the repository root.
+You need: [uv](#why-uv) (installs Python 3.13 for you), the
+[Google Cloud CLI](https://cloud.google.com/sdk/docs/install), Docker (Docker
+Desktop on Windows/macOS), a Google Cloud project with the BigQuery API enabled
+(the free tier is enough) and a Gemini API key from
+[Google AI Studio](https://aistudio.google.com/apikey). Run every command from the
+repository root.
 
-**1. Dependencies and local config**
+### 1. Install uv
+
+| OS | Command |
+| --- | --- |
+| macOS / Linux | `curl -LsSf https://astral.sh/uv/install.sh \| sh` (or `brew install uv`) |
+| Windows (PowerShell) | `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 \| iex"` (or `winget install --id=astral-sh.uv -e`) |
+
+Open a new terminal afterwards and check with `uv --version`.
+
+### 2. Install the project
+
+```bash
+uv sync
+```
+
+This reads `.python-version` and `uv.lock`: if Python 3.13 is missing, uv
+downloads it; then it creates `.venv` with the exact locked versions of every
+package, including the test and lint tools. No manual virtualenv or activation:
+`uv run <command>` always uses that environment.
+
+### 3. Local configuration
 
 macOS / Linux:
 
 ```bash
-uv sync                      # or: python3.13 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
 cp .env.example .env
 cp access.example.json access.local.json
 ```
 
-Windows PowerShell:
+Windows (PowerShell):
 
 ```powershell
-uv sync                      # or: py -3.13 -m venv .venv; .venv\Scripts\Activate.ps1; pip install -r requirements.txt
 Copy-Item .env.example .env
 Copy-Item access.example.json access.local.json
 ```
 
-With pip, drop the `uv run` prefix from the commands below and use `python` from
-the activated environment. `requirements.txt` pins the runtime packages exported
-from `uv.lock`; tests and lint tools come with `uv sync`.
+Then edit both files:
 
-**2. Google credentials for BigQuery**
+- `.env`: `GEMINI_API_KEY`, `GEMINI_MODEL` (a model enabled in your AI Studio
+  project, e.g. a current Flash-Lite model), optionally `GEMINI_FALLBACK_MODEL`
+  (e.g. a current Flash model), and `GOOGLE_CLOUD_PROJECT`.
+- `access.local.json`: map demo managers to exact brand names from the dataset,
+  e.g. `{"manager_a": ["Calvin Klein", "Nautica", "Tommy Hilfiger"]}`. This is
+  trusted startup configuration that simulates entitlements; it is not
+  authentication.
+
+### 4. Google credentials for BigQuery
 
 ```bash
 gcloud auth application-default login
 gcloud auth application-default set-quota-project YOUR_PROJECT_ID
 ```
 
-**3. Edit `.env`:** `GEMINI_API_KEY`, `GEMINI_MODEL` (a model enabled in your AI
-Studio project, e.g. a current Flash-Lite model), optionally
-`GEMINI_FALLBACK_MODEL` (e.g. a current Flash model), and `GOOGLE_CLOUD_PROJECT`.
+### 5. Database, Golden Knowledge index and chat
 
-**4. Edit `access.local.json`:** map demo managers to exact brand names from the
-dataset, e.g. `{"manager_a": ["Calvin Klein", "Nautica", "Tommy Hilfiger"]}`.
-This is trusted startup configuration that simulates entitlements; it is not
-authentication.
-
-**5-7. Database, Golden Knowledge index, chat** (same on every OS):
+The same commands on every OS:
 
 ```bash
 docker compose up -d --wait reports-postgres     # PostgreSQL 17 + pgvector; migrations run on first start
-uv run python -m retail_agent.golden.ingest      # validates, embeds and publishes the Golden trios
-uv run python main.py --manager manager_a
+uv run python -m retail_agent.golden.ingest      # validates, embeds and publishes the 12 Golden trios
+uv run python main.py --manager manager_a        # start chatting; /help lists commands, /exit quits
 ```
 
 The application database is optional for plain analysis: without it, reports,
 memory and Golden precedents are unavailable and the agent says so. If a step
-fails at startup, the CLI prints the failing stage and a hint (see Troubleshooting).
+fails at startup, the CLI prints the failing stage and a hint (see
+[Troubleshooting](#troubleshooting)).
+
+### Check without credentials
+
+The test suite needs no Google account and no paid calls:
+
+```bash
+uv run python -m pytest
+```
+
+## Why uv
+
+[uv](https://docs.astral.sh/uv/) is a Python package and project manager written
+in Rust. It replaces pip, venv, pip-tools and pyenv with one tool:
+
+- **Speed.** Astral, its developer, benchmarks it at 10-100x faster than pip. On
+  this project (75 runtime packages, Windows, measured 3 November 2026): a cold
+  install took 29 s with uv versus 62 s with pip (about 2x; both mostly wait for
+  downloads), and recreating the environment from uv's cache took 0.9 s, about
+  70x faster than the cold pip install. Re-running setup on a reviewer's machine
+  or in CI is therefore almost free.
+- **Reproducibility.** `uv.lock` pins every direct and transitive dependency with
+  hashes for all platforms, so the reviewer gets exactly the versions that were
+  tested. A plain `requirements.txt` does not pin transitive packages unless it is
+  generated, and it does not fix the Python version.
+- **Python included.** `.python-version` makes uv fetch Python 3.13 if needed;
+  nobody has to install the right interpreter first.
+- **One command.** `uv sync` creates the environment and `uv run` uses it, with no
+  activation step that differs between bash and PowerShell.
 
 ## Example session
 
@@ -250,13 +302,13 @@ uv run python -m retail_agent.observability.metrics        # agent metrics from 
 uv run python -m retail_agent.observability.metrics --turn <turn_id>
 ```
 
-Latest results: 284 tests pass (including PostgreSQL); retrieval recall@3 0.96;
-answer evaluation 15/15 deterministic checks and 100% judge pass with Golden
-Knowledge versus 14/15 and 60% without ([HLD/EVALUATION.md](HLD/EVALUATION.md)).
-Setup was also verified from a fresh clone on Windows, with uv and with plain
-pip, including a fresh database volume (migrations 001-004), Golden ingestion and
-a CLI question. The macOS/Linux commands are the standard equivalents and were
-not run on those systems.
+Latest results (final code, 3 November 2026): 287 tests pass (including
+PostgreSQL); retrieval recall@3 0.96; answer evaluation 15/15 deterministic checks
+and 100% judge pass with Golden Knowledge versus 14/15 and 70% without
+([HLD/EVALUATION.md](HLD/EVALUATION.md)).
+Setup was also verified from a fresh clone on Windows, including a fresh
+database volume (migrations 001-004), Golden ingestion and a CLI question. The
+macOS/Linux commands are the standard equivalents and were not run on those systems.
 
 ## Observability
 

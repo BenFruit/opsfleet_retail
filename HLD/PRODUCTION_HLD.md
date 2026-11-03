@@ -17,7 +17,7 @@ not deployed. Setup and an example session are in the [README](../README.md).
 | 3 | Destructive operations (required in prototype) | Implemented: frozen preview + separate `/confirm` | [§5.3](#53-high-stakes-oversight-report-deletion), [SAVED_REPORTS.md](SAVED_REPORTS.md) |
 | 4 | Learning loop | User level implemented (explicit memory); system level: reviewed path demonstrated, automation proposed | [§5.4](#54-continuous-improvement), [USER_MEMORY.md](USER_MEMORY.md) |
 | 5 | Resilience (required in prototype) | Implemented: bounded SQL repair, model retry + fallback, graceful degradation | [§5.5](#55-resilience-and-error-handling) |
-| 6 | Quality assurance | Implemented: 284 tests, retrieval eval, live answer eval with A/B | [§5.6](#56-quality-assurance), [EVALUATION.md](EVALUATION.md) |
+| 6 | Quality assurance | Implemented: 287 tests, retrieval eval, live answer eval with A/B | [§5.6](#56-quality-assurance), [EVALUATION.md](EVALUATION.md) |
 | 7 | Observability (required in prototype) | Implemented: correlated JSON events, metrics report, per-turn timeline, optional Langfuse | [§5.7](#57-observability), [OBSERVABILITY_AND_ACCESS.md](OBSERVABILITY_AND_ACCESS.md) |
 | 8 | Persona management | Implemented: style-only Google Doc, refreshed per question | [§5.8](#58-persona-management), [PERSONA_MANAGEMENT.md](PERSONA_MANAGEMENT.md) |
 
@@ -245,12 +245,26 @@ is fast at hundreds to thousands of rows.
 - *Qdrant / Vertex AI Vector Search*: justified only when measured corpus size or
   latency requires a separate index.
 
-**Experience.** My background is on-premise ML infrastructure: provisioning VMs
-from scratch and serving models, including vision-language models, on them. I
-use LangGraph comfortably and prefer to keep it thin, with logic in my own
-classes. SQLGlot was selected specifically for this task as the open-source parser that
-makes lineage-aware SQL validation possible. The GCP managed services above map directly onto
-infrastructure I have built and operated by hand.
+**Experience.** I am an applied AI engineer; since January 2025 I have led
+production LLM, RAG and anomaly-detection systems at a government financial
+monitoring agency. I have used LangGraph in production for tool-calling agent
+workflows, which is why it stays a thin state machine here with the logic in my
+own classes. Several choices in this prototype repeat what worked there:
+
+- hybrid semantic + lexical retrieval with a reviewed gold set to calibrate the
+  threshold (Golden Knowledge, [§5.1](#51-hybrid-intelligence-golden-knowledge));
+- PostgreSQL as the system of record, with a dedicated vector store (I have run
+  Qdrant) only when measured scale requires it;
+- validation of model output, metadata-only audit logs, failure tracing,
+  PII-aware processing, regression checks and human review before high-impact
+  actions (here: structured actions, JSON events, PII guards, tests and the
+  `/confirm` step);
+- deployment on self-managed infrastructure (Docker, Kubernetes, GPU servers,
+  air-gapped networks); the GCP services in [§2.1](#21-production-serving-architecture-production)
+  are the managed counterparts of that stack.
+
+SQLGlot was selected specifically for this task as the open-source parser that
+makes lineage-aware SQL validation possible.
 
 ## 4. Data: where it lives and how it is handled
 
@@ -292,7 +306,7 @@ data. Twelve trios cover the assignment's examples.
   within a prompt budget. Answers that follow a precedent end with
   `Method: <trio_id> v<version>`. If retrieval fails, planning continues without it.
 - **Evidence:** retrieval recall@3 0.96 on 30 English/Russian cases; answer
-  evaluation judge pass rate 1.00 with Golden vs 0.60 without.
+  evaluation judge pass rate 1.00 with Golden vs 0.70 without (0.60 in an earlier run).
 
 **Production:** Cloud Storage bucket, PR review by a second analyst, CI ingestion
 and evaluation gate, tenant/visibility filters applied before ranking, a reranker
@@ -407,11 +421,11 @@ pull requests; the ingest job and evaluation gate publish; canary and rollback.
 
 | Failure | Behaviour | Status |
 | --- | --- | --- |
-| SQL syntax/semantic error, policy rejection | Safe reason + attempted SQL back to the model; initial attempt + 2 repairs; then an honest partial answer with the last checked result | Implemented; 7/7 dry-run rejections recovered in the eval |
+| SQL syntax/semantic error, policy rejection | Safe reason + attempted SQL back to the model; initial attempt + 2 repairs; then an honest partial answer with the last checked result | Implemented; every dry-run rejection recovered in both eval runs (7 and 3) |
 | Empty result | Reported as "no publishable rows" (may be suppression), model may revise filters it invented, never the user's | Implemented |
 | Premature answer after only failures | Forced repair instead of an answer without evidence | Implemented |
 | Invalid JSON / action from the model | Up to 2 corrections before any tool runs | Implemented |
-| Gemini 503 / 429 / connection error | One retry with backoff or Retry-After (<= 8 s), then one call to the fallback model | Implemented; fallback answered 5 times during eval runs |
+| Gemini 503 / 429 / connection error | One retry with backoff or Retry-After (<= 8 s), then one call to the fallback model | Implemented; exercised by a real Gemini 503 episode in the final eval (9 retries, 2 fallback answers, no failed turn) |
 | Gemini timeout, daily quota, model not found | Straight to the fallback model | Implemented |
 | BigQuery timeout, quota, outage | Stop that query (no blind replay of possibly-billed jobs), cancel job by ID, partial answer | Implemented |
 | Cost | Dry run vs per-query cap (100 MB billed), per-turn 300 MB, row and size caps; unknown billing reserves the ceiling | Implemented |
@@ -425,14 +439,14 @@ dependency, admission control and per-tenant quotas, idempotency keys on writes.
 
 ### 5.6 Quality assurance
 
-**Implemented** ([EVALUATION.md](EVALUATION.md)): 284 unit/integration tests;
+**Implemented** ([EVALUATION.md](EVALUATION.md)): 287 unit/integration tests;
 retrieval evaluation (30 cases); live answer evaluation (15 cases: analytics,
 reports, UX, safety) with deterministic checks (reference numbers from reviewed SQL
 under the same brand scope, required and forbidden SQL, numeric grounding, PII,
 refusal and access patterns) plus an LLM judge for intent coverage, caveats and
 actionability. The judge missed a wrong prose total, so numeric faithfulness is
-checked in code. Golden on/off A/B: 15/15 vs 14/15 deterministic, 1.00 vs 0.60
-judge pass rate.
+checked in code. Golden on/off A/B: 15/15 vs 14/15 deterministic, 1.00 vs 0.70
+judge pass rate (an earlier run on pre-refactoring code: 1.00 vs 0.60).
 
 **Production:** 100-300 stratified cases from real questions, repeated runs, judge
 calibrated against analysts, release blocked on any safety or reference failure,
@@ -447,17 +461,17 @@ in-product feedback and implicit signals.
 `turn_id` on every turn event, `query_id` + `turn_id` on every query event.
 
 Agent-level metrics, computed by `python -m retail_agent.observability.metrics`
-(values from the 60 evaluation turns):
+(values from the 30 turns of the final evaluation run):
 
 | Metric | Why | Eval value |
 | --- | --- | --- |
 | Partial answer rate | Turns ending in a controlled stop | 0.0 |
-| SQL first-attempt success, recovery after error | Planner quality, repair effectiveness | 0.82, 1.00 |
-| Failures by code and stage | Where queries break (validation, dry run, execution) | 7 x `query_rejected` at dry run |
-| Model failures, retries, fallbacks, answering model | Provider health and fallback use | 5 retries, 5 fallbacks |
+| SQL first-attempt success, recovery after error | Planner quality, repair effectiveness | 0.84, 1.00 |
+| Failures by code and stage | Where queries break (validation, dry run, execution) | 3 x `query_rejected` at dry run |
+| Model failures, retries, fallbacks, answering model | Provider health and fallback use | 9 retries after 503, 2 fallbacks (after 503 and after a timeout) |
 | Golden hit rate, top similarity, most used trios | Retrieval health and knowledge coverage | 0.87, p50 0.75 |
-| Ungrounded figures (repaired / noted) | Faithfulness risk | 3 repaired |
-| Latency p50/p95, model calls, SQL attempts, tokens, scanned MB per turn | UX and cost | 5.2 s / 10.5 s, 1.85, 0.8, 8.8k, 16 MB |
+| Ungrounded figures (repaired / noted) | Faithfulness risk | 2 repaired |
+| Latency p50/p95, model calls, SQL attempts, tokens, scanned MB per turn | UX and cost | 43.7 s / 104 s (Gemini incident, see EVALUATION.md), 1.87, 0.8, 9.1k, 15 MB |
 | Report operations, confirmed deletions, dependency warnings | Destructive actions and degraded dependencies | per run |
 
 **Deep dive:** `--turn <turn_id>` prints the timeline of one turn (model calls

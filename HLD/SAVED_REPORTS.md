@@ -80,7 +80,8 @@ does not delete documents.
 - `storage/postgres.py`: shared connection factory; driver errors become a fixed message.
 - `reports/repository.py`: parameterized owner/brand-scoped PostgreSQL operations.
 - `reports/service.py`: snapshot saving, bounded observations and deletion policy.
-- `agent/orchestrator.py`: report graph node and snapshot/conversation state.
+- `agent/orchestrator.py`: report graph node; `agent/session.py`: the saveable last
+  answer and conversation ID.
 - `agent/commands.py`: exact `/confirm` and `/cancel` handling before any model call.
 
 Langfuse shows the `reports` graph node and embedding generations. Confirmation
