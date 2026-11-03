@@ -58,6 +58,7 @@ class AgentState(TypedDict):
     memory_calls: int
     user_memory: list[dict]
     memory_status: str
+    golden: dict[str, Any]
     action_retries: int
     report_calls: int
     question: str

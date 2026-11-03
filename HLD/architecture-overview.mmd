@@ -13,4 +13,8 @@ flowchart LR
     APP -.-> LOG["Allowlisted local JSON logs"]
     APP -.-> LF["Optional local Langfuse - raw payload privacy gap"]
     LF --> STORE[("Independent Langfuse storage stack")]
-    FUTURE["Golden retrieval, real login and production services: NOT implemented"]
+    BUCKET["golden/trios: reviewed Question-SQL-Report JSON"] --> INGEST["golden.ingest job: validate, dry run, embed changed, atomic publish"]
+    INGEST -->|"golden_ingest role: write"| PG
+    APP -->|"retail_agent role: read-only retrieval before planning"| PG
+    INGEST --> EMB
+    FUTURE["Real login and production services: NOT implemented"]

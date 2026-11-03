@@ -1,7 +1,7 @@
 flowchart TD
     INPUT["CLI input"] --> CMD{"Direct command?"}
     CMD -->|"confirm/cancel or memory commands"| DIRECT["Deterministic owner-scoped operation, no model"]
-    CMD -->|"ordinary question"| INIT["Cancel pending deletion; snapshot persona; load bounded memory; initialize budgets"]
+    CMD -->|"ordinary question"| INIT["Cancel pending deletion; snapshot persona; load bounded memory; retrieve up to 3 Golden precedents; initialize budgets"]
     INIT --> PLAN["plan: Gemini returns one validated action"]
     PLAN --> ACT{"Action"}
     ACT -->|query| QUERY["query: SQL policy, trusted scope, dry run, execute, result checks"]

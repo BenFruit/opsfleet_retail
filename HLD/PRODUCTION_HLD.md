@@ -9,7 +9,7 @@ not unsupported causal certainty. See task.txt and STAKEHOLDER_POLICY.md.
 
 | Requirement | Current prototype | Production target |
 | --- | --- | --- |
-| Hybrid intelligence | Schema/business instructions; no Golden retrieval | Reviewed, versioned question/SQL/report retrieval |
+| Hybrid intelligence | 12 reviewed trios, validated hash-based ingestion into pgvector, thresholded hybrid retrieval before planning, retrieval eval (GOLDEN_KNOWLEDGE.md) | Cloud Storage bucket, PR-reviewed publishing job, tenant filters, reranker, feedback-driven trio promotion |
 | Safety/access | AST validation, brand rewriting, demographic contributor checks, result guards | Authenticated identity, data-layer isolation, privacy controls and adversarial validation |
 | Destructive operations | Frozen preview IDs, separate exact confirmation, transactional owner/brand recheck | Durable signed confirmation, idempotency and audit |
 | User learning | Explicit short memories with embeddings and full bounded context | Consent-aware selective retrieval and correction lifecycle |
@@ -90,6 +90,10 @@ may reference forbidden data before rejection, so rejected actions must also be
 sanitized before telemetry export.
 
 ## 4. Golden Knowledge: format, ingestion and retrieval
+
+The prototype implements the core of this section; see GOLDEN_KNOWLEDGE.md for the
+actual trio format, ingestion job, retrieval parameters and calibration results.
+The example below is the fuller production artifact.
 
 Golden Knowledge is a reviewed reusable analytical method, not a cache of universally
 true historical answers. Store one immutable JSON artifact per version, for example:

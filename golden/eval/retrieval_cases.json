@@ -1,0 +1,122 @@
+[
+  {
+    "question": "What was our revenue each month this year?",
+    "expected": "monthly-revenue-trend"
+  },
+  {
+    "question": "Покажи выручку по месяцам",
+    "expected": "monthly-revenue-trend"
+  },
+  {
+    "question": "Did sales go up or down last month versus the month before?",
+    "expected": "last-month-vs-previous"
+  },
+  {
+    "question": "Как изменились продажи в октябре по сравнению с сентябрём?",
+    "expected": "last-month-vs-previous"
+  },
+  {
+    "question": "List the customers who spent the most with us",
+    "expected": "top-customers-by-spend"
+  },
+  {
+    "question": "Топ-10 покупателей по сумме покупок",
+    "expected": "top-customers-by-spend"
+  },
+  {
+    "question": "Why are Shorts selling better than Swim?",
+    "expected": "product-comparison"
+  },
+  {
+    "question": "Compare Outerwear & Coats with Blazers & Jackets",
+    "expected": "product-comparison"
+  },
+  {
+    "question": "Which brand had the best margin in October?",
+    "expected": "brand-gross-profit"
+  },
+  {
+    "question": "Прибыльность брендов за прошлый месяц",
+    "expected": "brand-gross-profit"
+  },
+  {
+    "question": "Do customers in New York spend less than in Florida?",
+    "expected": "state-spend-comparison"
+  },
+  {
+    "question": "Почему в Техасе средний чек ниже, чем в Калифорнии?",
+    "expected": "state-spend-comparison"
+  },
+  {
+    "question": "Which age groups are our biggest spenders?",
+    "expected": "age-band-spend"
+  },
+  {
+    "question": "Сколько тратят покупатели 20-30 лет по сравнению с 40-50?",
+    "expected": "age-band-spend"
+  },
+  {
+    "question": "How many customers stopped buying from us recently?",
+    "expected": "customer-churn-proxy"
+  },
+  {
+    "question": "Retention looks worse, are customers leaving?",
+    "expected": "customer-churn-proxy"
+  },
+  {
+    "question": "Prepare a Q3 review with recommendations for next quarter",
+    "expected": "quarterly-business-review"
+  },
+  {
+    "question": "Подготовь квартальный отчёт с выводами и планом действий",
+    "expected": "quarterly-business-review"
+  },
+  {
+    "question": "What share of items get sent back, by category?",
+    "expected": "return-rate-by-category"
+  },
+  {
+    "question": "Где больше всего возвратов?",
+    "expected": "return-rate-by-category"
+  },
+  {
+    "question": "Is Facebook or Search bringing better customers?",
+    "expected": "traffic-source-performance"
+  },
+  {
+    "question": "Эффективность источников трафика",
+    "expected": "traffic-source-performance"
+  },
+  {
+    "question": "What kind of questions can I ask about this data?",
+    "expected": "dataset-overview"
+  },
+  {
+    "question": "Какие таблицы есть в базе?",
+    "expected": "dataset-overview"
+  },
+  {
+    "question": "Hello, who are you?",
+    "expected": null
+  },
+  {
+    "question": "Remember that I prefer bullet points",
+    "expected": null
+  },
+  {
+    "question": "Delete all reports mentioning Nike",
+    "expected": null
+  },
+  {
+    "question": "What's the weather in Astana today?",
+    "expected": null
+  },
+  {
+    "question": "Write me a poem about the sea",
+    "expected": null
+  },
+  {
+    "question": "Покажи мои сохранённые отчёты",
+    "expected": null
+  }
+]

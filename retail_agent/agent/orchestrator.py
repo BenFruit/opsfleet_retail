@@ -29,6 +29,7 @@ class AnalyticalAgent:
         limits: AgentLimits | None = None,
         reports=None,
         memory=None,
+        golden=None,
     ):
         self.allowed_brands = sorted(get_allowed_brands(manager_id))
         self.authorized_brand_count = len(self.allowed_brands)
@@ -41,6 +42,7 @@ class AnalyticalAgent:
         self.history_truncated = False
         self.reports = reports
         self.memory = memory
+        self.golden = golden
         self.conversation_id = uuid4().hex
         self.last_answer: str | None = None
         self.last_answer_brands: list[str] = []
@@ -124,6 +126,7 @@ class AnalyticalAgent:
 
         state: AgentState = {
             "memory_calls": 0, "user_memory": [], "memory_status": "disabled",
+            "golden": {"status": "disabled", "items": []},
             "action_retries": 0,
             "report_calls": 0,
             "question": question, "history": list(self.history), "observations": [],
@@ -140,6 +143,10 @@ class AnalyticalAgent:
                 except UserMemoryError:
                     state["memory_status"] = "unavailable"
                     logger.warning("user_memory_load_failed", extra={"error_code": "memory_unavailable"})
+            if self.golden is not None:
+                # Retrieved once per turn, before planning; every model step sees the same examples.
+                previous = self.history[-1]["question"] if self.history else None
+                state["golden"] = self.golden.retrieve(question, previous_question=previous, turn_id=state["turn_id"])
             # Langfuse is opt-in. Keep implicit LangSmith export disabled even
             # when stale LANGSMITH_TRACING variables remain in the environment.
             with tracing_context(enabled=False):
@@ -187,6 +194,7 @@ class AnalyticalAgent:
         try:
             action = self.analyst.decide(
                 user_memory={"status": state["memory_status"], "items": state["user_memory"]},
+                golden=state["golden"],
                 question=state["question"], history=state["history"],
                 observations=state["observations"],
                 access_context={"authorized_brands": self.allowed_brands},

@@ -16,6 +16,7 @@ _FIELDS = (
     "persona_version",
     "memory_calls",
     "model", "attempt", "delay_ms", "fallback",
+    "candidate_count", "golden_ids", "top_similarity",
 )
 
 

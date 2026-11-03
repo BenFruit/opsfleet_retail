@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 from retail_agent.agent.orchestrator import AnalyticalAgent
 from retail_agent.data.bigquery_runner import BigQueryRunner
 from retail_agent.data.query_service import QueryLimits, QueryService
+from retail_agent.golden.repository import GoldenRepository
+from retail_agent.golden.service import GoldenKnowledge
 from retail_agent.llm.analyst import Analyst
 from retail_agent.llm.client import GeminiClient
 from retail_agent.observability.logging import configure_logging
@@ -101,14 +103,21 @@ def main() -> int:
         stage = "agent_init"
         repository = ReportRepository()
         embedder = ReportEmbedder(llm)
+        golden = None
+        if os.getenv("GOLDEN_RETRIEVAL_ENABLED", "true").lower() == "true":
+            # The agent reads the index with its own read-only grant; ingestion is a separate job.
+            golden = GoldenKnowledge(GoldenRepository(repository.connection), embedder)
         agent = AnalyticalAgent(
             Analyst(llm, schema),
             QueryService(runner, QueryLimits(minimum_cohort_size=args.min_cohort_size)),
             manager_id=args.manager,
             reports=ReportLibrary(repository, embedder, manager_id=args.manager),
             memory=UserMemory(MemoryRepository(repository.connection), embedder, manager_id=args.manager),
+            golden=golden,
         )
-        logger.info("startup_completed", extra={"model": llm.model, "fallback": llm.fallback_model is not None})
+        logger.info("startup_completed", extra={
+            "model": llm.model, "fallback": llm.fallback_model is not None, "status": "golden_on" if golden else "golden_off",
+        })
         run_chat(agent)
         return 0
     except FileNotFoundError as error:

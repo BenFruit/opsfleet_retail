@@ -123,7 +123,8 @@ Do not enter personal contact details in the chat.
 
 ```mermaid
 flowchart TD
-    U[CLI question + fixed demo identity] --> P[Gemini: query or answer]
+    U[CLI question + fixed demo identity] --> K[Golden Knowledge: retrieve up to 3 reviewed precedents]
+    K --> P[Gemini: query or answer]
     P -->|query| V[Validate sources, columns and demographic aggregate shape]
     V --> S[Brand scope + trusted cohort guard where needed]
     S --> Q[BigQuery dry run + capped execution]
@@ -147,6 +148,33 @@ business-specific bucket parameter. For example, `FLOOR(u.age/5)*5 AS age_from`
 and `FLOOR(u.age/5)*5+4 AS age_to` express five-year groups directly in SQL.
 Rounded aggregates and ratios of approved aggregates use the same validation.
 Report operations remain a separate typed `report` action.
+
+### Golden Knowledge (hybrid intelligence)
+
+Before planning, the agent retrieves up to three reviewed analyst precedents
+("trios": question -> SQL -> report) from `golden/trios/`, so the model reuses how
+analysts defined revenue, churn, "last month", demographic comparisons and report
+structure instead of improvising. Precedents are methods, not data: report
+examples use `<placeholders>`, the model must get every number from its own
+checked queries, and its SQL passes the same validation as always. Retrieval is
+hybrid (pgvector similarity plus a lexical tie-break), thresholded and budgeted;
+an outage only disables precedents for that turn. Answers that follow a precedent
+end with `Method: <trio_id> v<version>`. Full design, calibration results and the
+production path: [HLD/GOLDEN_KNOWLEDGE.md](HLD/GOLDEN_KNOWLEDGE.md).
+
+Build or update the index after migration 004 (see the PostgreSQL section):
+
+```powershell
+uv run python -m retail_agent.golden.ingest --check-only      # validate files, no network
+uv run python -m retail_agent.golden.ingest --bigquery-dry-run # compile every SQL in BigQuery (free)
+uv run python -m retail_agent.golden.ingest                   # embed changed trios and publish atomically
+uv run python -m retail_agent.golden.evaluate                 # retrieval hit@1/recall@3 and threshold table
+```
+
+To add or change knowledge, edit or add a JSON file (bump `version`; set
+`"status": "withdrawn"` to retire one) and rerun ingest: only changed trios are
+re-embedded. The chat agent can only read the index; ingestion uses the separate
+`golden_ingest` role.
 
 ### Persistent user memory
 
@@ -316,15 +344,17 @@ SELECT/INSERT/UPDATE/DELETE reports, but has no superuser/DDL privileges.
 
 `docker/reports-postgres/001_saved_reports.sql` creates the application role/table;
 `002_vectors.sql` adds pgvector, the embedding, model ID and trusted brand scope;
-`003_user_memory.sql` creates owner-scoped memory. All three run automatically on a
-NEW volume. Init scripts do not rerun on existing volumes. For an existing reports
-volume with 001 already applied, update the image and apply missing migrations in
-order without deleting data (002/003 are idempotent):
+`003_user_memory.sql` creates owner-scoped memory; `004_golden_knowledge.sql` creates
+the read-only Golden Knowledge index and the separate `golden_ingest` writer role.
+All four run automatically on a NEW volume. Init scripts do not rerun on existing
+volumes. For an existing reports volume with 001 already applied, update the image
+and apply missing migrations in order without deleting data (002-004 are idempotent):
 
 ```powershell
 docker compose up -d --wait reports-postgres
 Get-Content docker/reports-postgres/002_vectors.sql -Raw | docker compose exec -T reports-postgres psql -U postgres -d retail_agent -v ON_ERROR_STOP=1
 Get-Content docker/reports-postgres/003_user_memory.sql -Raw | docker compose exec -T reports-postgres psql -U postgres -d retail_agent -v ON_ERROR_STOP=1
+Get-Content docker/reports-postgres/004_golden_knowledge.sql -Raw | docker compose exec -T reports-postgres psql -U postgres -d retail_agent -v ON_ERROR_STOP=1
 ```
 
 If switching images produces a collation-version warning, reindex before refreshing
@@ -494,8 +524,8 @@ docker compose config --quiet
 git diff --check
 ```
 
-The most recent run passed 205 tests (2 opt-in DB cases skipped); the last run
-including local DB integration was the 194-test pre-handoff baseline.
+The most recent run passed 221 tests including the opt-in local PostgreSQL cases
+(3 are skipped without `RETAIL_TEST_POSTGRES=1`).
 Default tests skip opt-in DB cases. Test fixtures use temporary owners and clean
 up only their own records. Model-based extraction/formatting and complete semantic
 correctness remain unproven; known manual memory failures are in
@@ -510,8 +540,9 @@ These examples do not replace a broader correctness/security evaluation.
 
 See `HLD/QUERY_SAFETY.md` for implementation details and `HLD/*.mmd` for the
 proposed broader architecture. `HLD/STAKEHOLDER_POLICY.md` records the confirmed
-Harry/Vlad policy clarifications. Golden retrieval, reviewed system learning,
-production deployment and broader evaluation remain design-only.
+Harry/Vlad policy clarifications. Golden Knowledge retrieval is implemented
+(HLD/GOLDEN_KNOWLEDGE.md); reviewed system learning automation, production
+deployment and broader answer-level evaluation remain design-only.
 
 ### Result delivery
 
