@@ -1,5 +1,8 @@
 import os
+import re
 import unittest
+from contextlib import contextmanager
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 from uuid import uuid4
@@ -7,7 +10,7 @@ from uuid import uuid4
 from retail_agent.agent.models import AgentAction
 from retail_agent.agent.orchestrator import AnalyticalAgent
 from retail_agent.data.query_service import QueryLimits, QueryResult
-from retail_agent.memory.models import RememberRequest, UserMemoryError
+from retail_agent.memory.models import MAX_ENTRIES, MAX_ENTRY_CHARS, RememberRequest, UserMemoryError
 from retail_agent.memory.repository import MemoryRepository
 from retail_agent.memory.service import UserMemory, explicit_remember, memory_key
 from retail_agent.settings import Settings
@@ -104,6 +107,25 @@ class MemoryPolicyTests(unittest.TestCase):
         ):
             with self.subTest(payload=payload), self.assertRaises(ValueError):
                 AgentAction.model_validate(payload)
+
+
+class MemoryLimitTests(unittest.TestCase):
+    def test_repository_fetches_one_row_beyond_the_limit(self):
+        conn = Mock()
+
+        @contextmanager
+        def connect():
+            yield conn
+
+        MemoryRepository(connect).load("owner")
+        sql, params = conn.execute.call_args.args
+        self.assertIn("LIMIT %s", sql)
+        self.assertEqual(params, ("owner", MAX_ENTRIES + 1))
+
+    def test_entry_length_matches_the_database_column(self):
+        migration = next((Path(__file__).resolve().parents[1] / "docker/reports-postgres").glob("003_*.sql"))
+        column = re.search(r"content VARCHAR\((\d+)\)", migration.read_text(encoding="utf-8"))
+        self.assertEqual(int(column.group(1)), MAX_ENTRY_CHARS)
 
 
 class MemoryGraphTests(unittest.TestCase):

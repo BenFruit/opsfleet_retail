@@ -1,7 +1,7 @@
 import json
 from uuid import uuid4
 
-from retail_agent.memory.models import UserMemoryError
+from retail_agent.memory.models import MAX_ENTRIES, UserMemoryError
 
 
 class MemoryRepository:
@@ -11,10 +11,12 @@ class MemoryRepository:
         self.connection = connection_factory
 
     def load(self, owner):
+        """Oldest first. One row beyond the limit is fetched so the service can
+        detect an over-limit store instead of silently dropping entries."""
         with self.connection() as conn:
             return conn.execute(
                 "SELECT memory_id, content, normalized_key FROM user_memories "
-                "WHERE owner_id=%s ORDER BY created_at, memory_id LIMIT 21", (owner,),
+                "WHERE owner_id=%s ORDER BY created_at, memory_id LIMIT %s", (owner, MAX_ENTRIES + 1),
             ).fetchall()
 
     def remember(self, owner, entries, model, turn_id):
@@ -25,8 +27,9 @@ class MemoryRepository:
             existing = conn.execute("SELECT normalized_key FROM user_memories WHERE owner_id=%s", (owner,)).fetchall()
             keys = {row["normalized_key"] for row in existing}
             new = [item for item in entries if item["key"] not in keys]
-            if len(keys) + len(new) > 20:
-                raise UserMemoryError("Memory limit reached (20 entries). Forget an old entry first; nothing new was saved.")
+            if len(keys) + len(new) > MAX_ENTRIES:
+                raise UserMemoryError(
+                    f"Memory limit reached ({MAX_ENTRIES} entries). Forget an old entry first; nothing new was saved.")
             for item in new:
                 conn.execute(
                     "INSERT INTO user_memories (memory_id, owner_id, content, normalized_key, embedding, embedding_model, source_turn_id) "

@@ -74,7 +74,14 @@ check passes); the `remember` turn also restated the previous answer.
   logs). `parse_google_doc_id` is a function; the built-in style moved to
   `llm/prompts/default_style.md` with identical text (version hash
   `4a007cf25a0a` is asserted) and ships in the wheel. `build_agent` creates a
-  reader only when a document is configured. 260 tests pass.
+  reader only when a document is configured. 260 tests pass. Commit `f4bab44`.
+- **F. Memory.** `memory/models.py` now has a module docstring and the limits
+  `MAX_ENTRIES` (20), `MAX_ENTRY_CHARS` (200, equal to the `VARCHAR(200)`
+  column, checked by a test) and `MAX_ENTRIES_PER_REQUEST` (5);
+  `RememberRequest` documents why extra fields are forbidden. The repository
+  uses `LIMIT %s` with `MAX_ENTRIES + 1` (explained: detect an over-limit store)
+  and the service/repository messages use the constant; texts are unchanged.
+  262 tests pass.
 
 ## Review findings (backend developer, 3 November) still open
 
@@ -122,7 +129,7 @@ Closed by steps 1-4: 3 (commands extracted), 6 (prompt in a file),
 - ~~E. Persona~~ (done above). Split Google Doc reading from current-style tracking,
   rename, `parse_google_doc_id` as a function, default style in
   `llm/prompts/`. Findings 10-12.
-- **F. Memory.** One limit constant, docstrings. Findings 14, 15.
+- ~~F. Memory~~ (done above). One limit constant, docstrings. Findings 14, 15.
 - **G. Tests.** Reorganize after the code settles: `tests/unit/<package>/`
   mirroring `retail_agent/`, `tests/integration/` (graph with fake backends,
   PostgreSQL), `tests/support/` (demo entitlements, fakes, builders). Test pure

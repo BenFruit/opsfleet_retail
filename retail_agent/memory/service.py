@@ -3,7 +3,7 @@ import re
 import unicodedata
 from hashlib import sha256
 
-from retail_agent.memory.models import RememberRequest, UserMemoryError
+from retail_agent.memory.models import MAX_ENTRIES, MAX_ENTRY_CHARS, RememberRequest, UserMemoryError
 from retail_agent.safety.result_guard import check_text
 
 
@@ -33,11 +33,11 @@ class UserMemory:
     def load(self):
         try:
             rows = self.repository.load(self.manager_id)
-            if len(rows) > 20:
+            if len(rows) > MAX_ENTRIES:
                 raise UserMemoryError("Stored memory exceeds the MVP context limit.")
             result = []
             for row in rows:
-                if not isinstance(row["content"], str) or not 1 <= len(row["content"]) <= 200:
+                if not isinstance(row["content"], str) or not 1 <= len(row["content"]) <= MAX_ENTRY_CHARS:
                     raise UserMemoryError("Stored memory has an invalid format.")
                 result.append({"memory_id": row["memory_id"], "text": check_text(row["content"])})
             return result
@@ -55,8 +55,9 @@ class UserMemory:
                 key = memory_key(text)
                 if key not in known:
                     entries[key] = text
-            if len(known) + len(entries) > 20:
-                raise UserMemoryError("Memory limit reached (20 entries). Forget an old entry first.")
+            # Early check without a lock; the repository repeats it atomically.
+            if len(known) + len(entries) > MAX_ENTRIES:
+                raise UserMemoryError(f"Memory limit reached ({MAX_ENTRIES} entries). Forget an old entry first.")
             # Obtain all embeddings before the single atomic database write.
             prepared = [{"key": key, "text": text, "vector": self.embedder.embed(
                 text, document=True, title="User memory", observation_name="memory_embedding",

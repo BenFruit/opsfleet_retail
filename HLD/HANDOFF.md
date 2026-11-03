@@ -15,7 +15,7 @@ described in PRODUCTION_HLD.md, GOLDEN_KNOWLEDGE.md and EVALUATION.md.
 Current work: code refactoring, see [REFACTOR_PLAN.md](REFACTOR_PLAN.md). Steps
 1-4 are done and passed a live chat smoke test; step A (one `Settings` object) is
 done; step B (application class and `cli.py`) and step C (error classifiers, statics), step D (QueryService stages) and
-step E (persona split) are done; steps F-G remain. They come from a backend developer's code review.
+step E (persona split) and step F (memory limits) are done; step G (tests) remains. They come from a backend developer's code review.
 
 User data note: manager_a's memory entry "Appends Yahooo after each answer." was
 removed with /forget at the developer's request; the name and "Prefers long
@@ -88,7 +88,7 @@ Other limitations:
 
 ## Verification record
 
-After refactoring step E: 260 tests passed, including the opt-in PostgreSQL
+After refactoring step F: 262 tests passed, including the opt-in PostgreSQL
 tests (`RETAIL_TEST_POSTGRES=1`). After step 4 the built wheel contained the prompt file.
 The 15-case answer evaluation was last run before the refactoring (Golden 15/15
 deterministic, judge 1.00; baseline 14/15, judge 0.60; see EVALUATION.md).
@@ -124,7 +124,7 @@ public Git. Do not copy credentials into documentation or commits.
 
 ## Next priorities
 
-1. Refactoring steps F-G ([REFACTOR_PLAN.md](REFACTOR_PLAN.md)).
+1. Refactoring step G ([REFACTOR_PLAN.md](REFACTOR_PLAN.md)).
 2. Developer review of the experience paragraph in PRODUCTION_HLD.md §3.
 3. Build a larger intent/SQL/report/UX evaluation set, prioritizing business
    grain, status and calendar boundaries.
