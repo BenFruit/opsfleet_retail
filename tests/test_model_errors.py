@@ -9,7 +9,7 @@ from google.genai import types
 from langsmith import tracing_context
 
 from retail_agent.agent.models import AgentAction
-from retail_agent.llm.client import ModelResponseError, _response_text, describe_model_error
+from retail_agent.llm.errors import ModelResponseError, describe_model_error, response_text
 
 
 class ModelErrorTests(unittest.TestCase):
@@ -36,7 +36,7 @@ class ModelErrorTests(unittest.TestCase):
                     response_mime_type="application/json", response_json_schema=AgentAction.model_json_schema(),
                 ),
             )
-        self.assertEqual(AgentAction.model_validate_json(_response_text(response)).action, "answer")
+        self.assertEqual(AgentAction.model_validate_json(response_text(response)).action, "answer")
 
     def test_provider_failures_are_distinguishable_and_do_not_expose_raw_body(self):
         cases = [
@@ -113,13 +113,13 @@ class ModelErrorTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 response = SimpleNamespace(text=text, candidates=[SimpleNamespace(finish_reason=finish)])
                 with self.assertRaises(ModelResponseError) as caught:
-                    _response_text(response)
+                    response_text(response)
                 self.assertEqual(describe_model_error(caught.exception)[0], expected)
 
     def test_prompt_block_without_candidates_is_reported(self):
         response = SimpleNamespace(text=None, candidates=[], prompt_feedback=SimpleNamespace(block_reason="SAFETY"))
         with self.assertRaises(ModelResponseError) as caught:
-            _response_text(response)
+            response_text(response)
         self.assertEqual(caught.exception.code, "model_response_blocked")
 
 

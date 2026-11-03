@@ -18,7 +18,7 @@ from retail_agent.agent.conversation import append_turn, is_snapshot_answer
 from retail_agent.agent.models import AgentLimits, AgentState, TurnResult
 from retail_agent.data.query_service import QueryService, QueryServiceError
 from retail_agent.llm.analyst import Analyst
-from retail_agent.llm.client import describe_model_error
+from retail_agent.llm.errors import describe_model_error
 from retail_agent.llm.embeddings import EmbeddingError
 from retail_agent.memory.models import UserMemoryError
 from retail_agent.observability.tracing import get_callbacks
@@ -29,6 +29,17 @@ from retail_agent.safety.result_guard import ResultGuardError, check_text, make_
 
 logger = logging.getLogger(__name__)
 _STOP_CODES = {"access_denied", "unsafe_result", "timeout", "backend_unavailable", "backend_denied", "rate_limited"}
+
+
+def route_after_plan(state: AgentState) -> str:
+    """Graph edge after planning: finish, re-plan after a rejected action, or run the chosen tool."""
+    if state["answer"]:
+        return "end"
+    if state["action"] is None:
+        return "plan"
+    if state["action"].action == "remember":
+        return "remember"
+    return "reports" if state["action"].action == "report" else "query"
 
 
 class AnalyticalAgent:
@@ -63,7 +74,7 @@ class AnalyticalAgent:
         graph.add_node("reports", self._reports)
         graph.add_node("remember", self._remember)
         graph.add_edge(START, "plan")
-        graph.add_conditional_edges("plan", self._after_plan, {"query": "query", "reports": "reports", "remember": "remember", "plan": "plan", "end": END})
+        graph.add_conditional_edges("plan", route_after_plan, {"query": "query", "reports": "reports", "remember": "remember", "plan": "plan", "end": END})
         graph.add_edge("remember", "plan")
         graph.add_conditional_edges("reports", lambda state: "end" if state["answer"] else "plan", {
             "plan": "plan", "end": END,
@@ -245,16 +256,6 @@ class AnalyticalAgent:
                 }],
             }
         return {"model_calls": state["model_calls"] + 1, "answer": partial_answer(state, f"[{code}] {message}")}
-
-    @staticmethod
-    def _after_plan(state: AgentState) -> str:
-        if state["answer"]:
-            return "end"
-        if state["action"] is None:
-            return "plan"
-        if state["action"].action == "remember":
-            return "remember"
-        return "reports" if state["action"].action == "report" else "query"
 
     def _remember(self, state: AgentState) -> dict:
         update = {"memory_calls": state["memory_calls"] + 1}

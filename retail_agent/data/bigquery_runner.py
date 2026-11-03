@@ -15,6 +15,13 @@ class QueryExecution:
     bytes_billed: int | None = None
 
 
+def brand_parameters(allowed_brands: tuple[str, ...]) -> list:
+    """The trusted brand list as the @allowed_brands query parameter used by scoped SQL."""
+    if not allowed_brands or any(not isinstance(brand, str) or not brand.strip() for brand in allowed_brands):
+        raise PermissionError("Nonempty trusted brand entitlements are required")
+    return [bigquery.ArrayQueryParameter("allowed_brands", "STRING", list(allowed_brands))]
+
+
 class BigQueryRunner:
     """Thin BigQuery adapter: scoped dry run, bounded execution, table schema.
 
@@ -26,12 +33,6 @@ class BigQueryRunner:
     def __init__(self, project_id: str | None = None, dataset_id: str = "bigquery-public-data.thelook_ecommerce") -> None:
         self.client = bigquery.Client(project=project_id)
         self.dataset_id = dataset_id
-
-    @staticmethod
-    def _brand_parameters(allowed_brands: tuple[str, ...]) -> list:
-        if not allowed_brands or any(not isinstance(brand, str) or not brand.strip() for brand in allowed_brands):
-            raise PermissionError("Nonempty trusted brand entitlements are required")
-        return [bigquery.ArrayQueryParameter("allowed_brands", "STRING", list(allowed_brands))]
 
     def dry_run(
         self,
@@ -45,7 +46,7 @@ class BigQueryRunner:
             dry_run=True,
             use_query_cache=False,
             use_legacy_sql=False,
-            query_parameters=self._brand_parameters(allowed_brands),
+            query_parameters=brand_parameters(allowed_brands),
         )
         job = self.client.query(
             sql, job_config=config, timeout=api_timeout_seconds,
@@ -73,7 +74,7 @@ class BigQueryRunner:
         config = bigquery.QueryJobConfig(
             use_legacy_sql=False,
             use_query_cache=False,
-            query_parameters=self._brand_parameters(allowed_brands),
+            query_parameters=brand_parameters(allowed_brands),
             maximum_bytes_billed=maximum_bytes_billed,
             job_timeout_ms=max(1, int(timeout_seconds * 1000)),
             labels={"application": "retail-agent"},

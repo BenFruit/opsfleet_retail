@@ -23,11 +23,13 @@ Reading order:
 - `retail_agent/agent/`: Pydantic actions and limits; `orchestrator.py` (LangGraph
   loop, nodes, budgets), `answer.py` (final-answer checks and repair feedback),
   `commands.py` (exact slash commands, no model), `conversation.py` (history).
-- `retail_agent/llm/`: direct Gemini SDK, shared `Embedder`, analyst, style loader;
+- `retail_agent/llm/`: direct Gemini SDK, `errors.py` (table-driven failure codes and
+  empty-response reasons), shared `Embedder`, analyst, style loader;
   the mandatory policy prompt is `llm/prompts/analyst_policy.md`.
 - `retail_agent/bootstrap.py`: agent wiring shared by the chat application and answer
   evaluation. `retail_agent/presentation.py`: user-facing Markdown rendering.
-- `retail_agent/data/`, `schema/`, `safety/`, `security/`: query execution,
+- `retail_agent/data/`, `schema/`, `safety/`, `security/`: query execution
+  (`data/errors.py` maps BigQuery failures to stable safe codes),
   curated source policy, SQL/result guards, `Entitlements` (loaded once at
   startup, passed explicitly) and trusted brand rewriting.
 - `retail_agent/storage/postgres.py`: one PostgreSQL connection factory shared by
@@ -113,4 +115,4 @@ branches. Commit and push only when the developer asks.
 Git transfers code/docs, not local DB data, remote persona contents or credentials.
 Update `HLD/HANDOFF.md` and relevant focused docs after significant decisions;
 keep Mermaid diagrams and production-vs-MVP labels synchronized. Do not claim
-the regression suite (255 tests) or the 15-case answer evaluation or isolated live successes prove semantic correctness.
+the regression suite (256 tests) or the 15-case answer evaluation or isolated live successes prove semantic correctness.

@@ -12,7 +12,7 @@ from retail_agent.agent.orchestrator import AnalyticalAgent
 from retail_agent.golden.evaluate import best_threshold, score
 from retail_agent.golden.ingest import DEFAULT_BUCKET, bigquery_dry_run, ingest, load_bucket, plan_ingest
 from retail_agent.golden.models import GoldenError, GoldenTrio
-from retail_agent.golden.service import GoldenKnowledge
+from retail_agent.golden.service import GoldenKnowledge, query_text
 from retail_agent.llm.analyst import Analyst
 from retail_agent.safety.sql_validator import validate_query
 from demo_access import DEMO_ENTITLEMENTS
@@ -144,9 +144,9 @@ class GoldenRetrievalTests(unittest.TestCase):
         self.assertNotIn("SECRET", repr(self.logger.mock_calls))
 
     def test_short_follow_up_includes_previous_question(self):
-        self.assertEqual(GoldenKnowledge.query_text("and by month?", "Revenue for Nike"), "Revenue for Nike\nand by month?")
+        self.assertEqual(query_text("and by month?", "Revenue for Nike"), "Revenue for Nike\nand by month?")
         long_question = "Which age groups spend the most on outerwear this year?"
-        self.assertEqual(GoldenKnowledge.query_text(long_question, "previous"), long_question)
+        self.assertEqual(query_text(long_question, "previous"), long_question)
 
 
 class GoldenAgentWiringTests(unittest.TestCase):

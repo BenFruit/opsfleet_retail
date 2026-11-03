@@ -8,7 +8,7 @@ from langsmith import get_tracing_context
 from google.genai import errors as genai_errors
 
 from retail_agent.agent.models import AgentAction, AgentLimits
-from retail_agent.agent.orchestrator import AnalyticalAgent
+from retail_agent.agent.orchestrator import AnalyticalAgent, route_after_plan
 from retail_agent.data.query_service import QueryLimits, QueryResult, QueryService, QueryServiceError
 from retail_agent.llm.analyst import Analyst
 from demo_access import DEMO_ENTITLEMENTS, patch_agent_loggers
@@ -28,6 +28,20 @@ def answer(text="Revenue is 30. This uses the selected status policy."):
 
 def result(rows=({"revenue": 30},), *, billed=10):
     return QueryResult("test-id", rows, False, 10, 10, billed)
+
+
+class RouteAfterPlanTests(unittest.TestCase):
+    def test_routes(self):
+        cases = (
+            ({"answer": "done", "action": None}, "end"),
+            ({"answer": None, "action": None}, "plan"),
+            ({"answer": None, "action": AgentAction(action="remember", remember={"memories": ["x"]})}, "remember"),
+            ({"answer": None, "action": AgentAction(action="report", report={"operation": "list", "query": ""})}, "reports"),
+            ({"answer": None, "action": AgentAction(action="query", sql="SELECT 1")}, "query"),
+        )
+        for state, expected in cases:
+            with self.subTest(expected=expected):
+                self.assertEqual(route_after_plan(state), expected)
 
 
 class AnalyticalAgentTests(unittest.TestCase):

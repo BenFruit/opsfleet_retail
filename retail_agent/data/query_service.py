@@ -8,14 +8,27 @@ from time import monotonic
 from typing import Any
 from uuid import uuid4
 
-from google.api_core import exceptions as google_errors
-
 from retail_agent.data.bigquery_runner import BigQueryRunner
+from retail_agent.data.errors import classify_backend_error
 from retail_agent.security.query_scope import apply_brand_scope
 from retail_agent.safety.sql_validator import SQLValidationError, validate_query
 
 
 logger = logging.getLogger(__name__)
+
+
+def _log_query_failure(
+    correlation: dict, stage: str, code: str, started: float,
+    validation_reason: str | None = None, error_type: str | None = None,
+) -> None:
+    extra = {
+        **correlation, "stage": stage, "error_code": code,
+        "duration_ms": round((monotonic() - started) * 1000),
+        "validation_reason": validation_reason,
+    }
+    if error_type is not None:
+        extra["error_type"] = error_type  # Exception class name only, never its text.
+    logger.warning("query_failed", extra=extra)
 
 
 @dataclass(frozen=True)
@@ -170,45 +183,12 @@ class QueryService:
         except QueryServiceError as error:
             error.stage = stage
             error.query_id = query_id
-            self._log_failure(
+            _log_query_failure(
                 correlation, stage, error.code, started,
                 validation_reason=str(error) if stage == "validation" else None,
             )
             raise
         except Exception as error:
-            code, message = self._safe_backend_error(error)
-            self._log_failure(correlation, stage, code, started, error_type=type(error).__name__)
+            code, message = classify_backend_error(error)
+            _log_query_failure(correlation, stage, code, started, error_type=type(error).__name__)
             raise QueryServiceError(code, message, stage=stage, query_id=query_id) from None
-
-    @staticmethod
-    def _log_failure(
-        correlation: dict, stage: str, code: str, started: float,
-        validation_reason: str | None = None, error_type: str | None = None,
-    ) -> None:
-        extra = {
-            **correlation, "stage": stage, "error_code": code,
-            "duration_ms": round((monotonic() - started) * 1000),
-            "validation_reason": validation_reason,
-        }
-        if error_type is not None:
-            extra["error_type"] = error_type  # Exception class name only, never its text.
-        logger.warning("query_failed", extra=extra)
-
-    @staticmethod
-    def _safe_backend_error(error: Exception) -> tuple[str, str]:
-        if isinstance(error, (TimeoutError, google_errors.DeadlineExceeded)):
-            return "timeout", "Query timed out. Try a smaller scope."
-        if isinstance(error, google_errors.BadRequest):
-            text = (error.message or "").upper()
-            if any(name in text for name in ("TIMESTAMP_SUB", "TIMESTAMP_ADD")) and "DOES NOT SUPPORT" in text:
-                return "query_rejected", "BigQuery TIMESTAMP_SUB/ADD do not support calendar MONTH/QUARTER/YEAR arithmetic. Use DATE_SUB/DATE_ADD and compare DATE values for calendar periods."
-            if "NO MATCHING SIGNATURE" in text and "TIMESTAMP" in text and "DATE" in text:
-                return "query_rejected", "BigQuery date/time types do not match. Convert timestamps with DATE(...) when comparing them with DATE boundaries."
-            return "query_rejected", "BigQuery rejected the query. It may need to be revised."
-        if isinstance(error, google_errors.Forbidden):
-            return "backend_denied", "BigQuery access or quota is unavailable."
-        if isinstance(error, (google_errors.TooManyRequests, google_errors.ResourceExhausted)):
-            return "rate_limited", "BigQuery quota or rate limit reached. Try again later."
-        if isinstance(error, (google_errors.ServiceUnavailable, google_errors.InternalServerError)):
-            return "backend_unavailable", "BigQuery is temporarily unavailable."
-        return "query_failed", "Query could not be completed."

@@ -41,7 +41,7 @@ def best_threshold(results: list[dict]) -> dict:
 
 def main(argv=None) -> int:
     from retail_agent.golden.repository import GoldenRepository
-    from retail_agent.golden.service import GoldenKnowledge
+    from retail_agent.golden.service import query_text
     from retail_agent.llm.client import GeminiClient
     from retail_agent.llm.embeddings import Embedder
     from retail_agent.settings import Settings
@@ -58,7 +58,7 @@ def main(argv=None) -> int:
         repository = GoldenRepository(connection_factory(settings))
         results = []
         for case in cases:
-            text = GoldenKnowledge.query_text(case["question"])
+            text = query_text(case["question"])
             vector = embedder.embed(text, document=False, observation_name="golden_eval_embedding")
             rows = repository.search(vector=vector, query_text=text, model=embedder.model)
             ranked = [(row["trio_id"], float(row["similarity"])) for row in rows]

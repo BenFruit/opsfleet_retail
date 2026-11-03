@@ -48,6 +48,16 @@ check passes); the `remember` turn also restated the previous answer.
   tracing, Gemini and BigQuery clients) and `startup_stage`, which replaces the
   mutable `stage` variable and turns failures into `StartupError` with the same
   safe messages, hints and `startup_failed` log as before. 255 tests pass.
+  Commit `f22b583`.
+- **C. Error classifiers and statics.** `llm/errors.py`: `ModelResponseError`,
+  `describe_model_error` driven by tables (HTTP status, provider-message markers,
+  exception classes) and `response_text`, whose docstring explains the three
+  places Gemini reports a missing answer (finish reason, prompt block, empty
+  text). `data/errors.py`: `classify_backend_error` (exception-class table plus
+  BadRequest repair hints). Statics became module functions: `brand_parameters`,
+  `report_summary`, golden `query_text`, `route_after_plan` (new direct test),
+  `_log_query_failure`. Codes and messages are unchanged.
+  `PersonaProvider.document_id` is left for step E. 256 tests pass.
 
 ## Review findings (backend developer, 3 November) still open
 
@@ -87,7 +97,7 @@ Closed by steps 1-4: 3 (commands extracted), 6 (prompt in a file),
   `os.getenv`/`load_dotenv` inside classes. Findings 1, 9.
 - ~~B. Application class~~ (done above). `main.py` becomes a few lines; startup stages and
   wiring move to an application class, the input loop to `cli.py`. Finding 2.
-- **C. Error classifiers and statics.** Table-driven `llm/errors.py`
+- ~~C. Error classifiers and statics~~ (done above). Table-driven `llm/errors.py`
   (`describe_model_error`, empty-response reasons) and a BigQuery error
   classifier; remove the static helpers listed above. Findings 5, 7, 8.
 - **D. `QueryService.execute` as explicit stages** (authorize, validate,
