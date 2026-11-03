@@ -42,7 +42,6 @@ def best_threshold(results: list[dict]) -> dict:
 def main(argv=None) -> int:
     from retail_agent.golden.repository import GoldenRepository
     from retail_agent.golden.service import query_text
-    from retail_agent.llm.client import GeminiClient
     from retail_agent.llm.embeddings import Embedder
     from retail_agent.settings import Settings
     from retail_agent.storage.postgres import connection_factory
@@ -52,9 +51,8 @@ def main(argv=None) -> int:
     parser.add_argument("--cases", type=Path, default=DEFAULT_CASES)
     args = parser.parse_args(argv)
     cases = json.loads(args.cases.read_text(encoding="utf-8"))
-    llm = GeminiClient.from_settings(settings)
+    embedder = Embedder.from_settings(settings)
     try:
-        embedder = Embedder(llm, settings.reports_embedding_model)
         repository = GoldenRepository(connection_factory(settings))
         results = []
         for case in cases:
@@ -64,7 +62,7 @@ def main(argv=None) -> int:
             ranked = [(row["trio_id"], float(row["similarity"])) for row in rows]
             results.append({"question": case["question"], "expected": case["expected"], "ranked": ranked})
     finally:
-        llm.close()
+        embedder.close()
 
     for r in results:
         top = r["ranked"][0] if r["ranked"] else ("-", 0.0)

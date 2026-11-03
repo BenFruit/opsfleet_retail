@@ -122,16 +122,14 @@ def main(argv=None) -> int:
         if args.check_only or args.bigquery_dry_run:
             return 0
         from retail_agent.golden.repository import GoldenRepository
-        from retail_agent.llm.client import GeminiClient
         from retail_agent.llm.embeddings import Embedder
         from retail_agent.storage.postgres import golden_ingest_connection_factory
 
-        llm = GeminiClient.from_settings(settings)
+        embedder = Embedder.from_settings(settings)
         try:
-            plan = ingest(trios, GoldenRepository(golden_ingest_connection_factory(settings)),
-                          Embedder(llm, settings.reports_embedding_model))
+            plan = ingest(trios, GoldenRepository(golden_ingest_connection_factory(settings)), embedder)
         finally:
-            llm.close()
+            embedder.close()
         print(f"Indexed: {len(plan.upserts)} new/changed, {len(plan.unchanged)} unchanged, {len(plan.remove)} removed.")
         return 0
     except (GoldenError, EmbeddingError, StorageError) as error:

@@ -250,12 +250,12 @@ def main(argv=None) -> int:
     llm = GeminiClient.from_settings(settings)
     judge_llm = GeminiClient.from_settings(settings, model=settings.eval_judge_model)
     runner = BigQueryRunner(project_id=settings.google_cloud_project)
+    embedder = Embedder.from_settings(settings)
     records = []
     try:
         schema = SchemaService(runner).load_analysis_schema()
         query_service = QueryService(runner, QueryLimits())
         connect = connection_factory(settings)
-        embedder = Embedder(llm, settings.reports_embedding_model)
         mode = "baseline" if args.no_golden else "golden"
         for case in cases:
             recorder = RecordingQueryService(query_service)
@@ -298,6 +298,7 @@ def main(argv=None) -> int:
         shutdown_tracing()
         llm.close()
         judge_llm.close()
+        embedder.close()
         runner.client.close()
 
     summary = summarize(records)

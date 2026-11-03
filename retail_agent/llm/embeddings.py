@@ -6,6 +6,7 @@ the model requires re-embedding every store (see golden.ingest for the index).
 
 import math
 
+from google import genai
 from google.genai import types
 
 from retail_agent.observability.tracing import trace_generation
@@ -30,11 +31,31 @@ def vector_literal(values: list[float]) -> str:
 
 
 class Embedder:
-    def __init__(self, gemini_client, model: str = "gemini-embedding-2"):
-        self.client = gemini_client.client
+    """Text -> vector through the Gemini embeddings API; independent of the chat model client.
+
+    It still checks text for sensitive values: this is the last step before the
+    text leaves for an external API, whatever the caller already checked.
+    """
+
+    def __init__(self, client: genai.Client, model: str = "gemini-embedding-2"):
+        self.client = client  # SDK client; tests pass a fake.
         self.model = model
         if self.model != "gemini-embedding-2":
             raise ValueError("This MVP supports gemini-embedding-2 only; changing models needs reindexing")
+
+    @classmethod
+    def from_settings(cls, settings) -> "Embedder":
+        if settings.gemini_api_key is None:
+            raise ValueError("GEMINI_API_KEY is not configured")
+        # Same transport policy as the chat client: bounded timeout, no hidden SDK retries.
+        client = genai.Client(
+            api_key=settings.gemini_api_key.get_secret_value(),
+            http_options=types.HttpOptions(timeout=30_000, retry_options=types.HttpRetryOptions(attempts=1)),
+        )
+        return cls(client, settings.reports_embedding_model)
+
+    def close(self) -> None:
+        self.client.close()
 
     def embed(self, text: str, *, document: bool, title: str = "", observation_name: str = "embedding") -> list[float]:
         check_text(text)

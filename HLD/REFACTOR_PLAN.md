@@ -214,7 +214,14 @@ schemas unchanged):
   rolls the transaction back. `UserMemory` owns the rules and messages (same
   texts) and translates that error. New PostgreSQL test: overflow rolls back the
   whole insert and duplicates do not count. 283 tests pass.
-- **J. Embedder.** Comment 3.
+- **J. Embedder.** Comment 3. Done: `Embedder(client, model)` takes a genai SDK
+  client instead of reaching into `GeminiClient.client`; `Embedder.from_settings`
+  builds its own client with the same transport policy (30 s timeout, no SDK
+  retries) and `close()` releases it (chat application, answer evaluation and
+  Golden jobs close it). Golden ingest/evaluate no longer create a chat client,
+  so they need only `GEMINI_API_KEY`. The sensitive-text check stays in
+  `embed()` (last step before an external API), now with a test that such text
+  never reaches the SDK. 284 tests pass.
 - **K. SQL policy package.** `retail_agent/sql/` with `validator.py` (validate
   once; forbidden node types as a table; table/column checks as functions),
   `demographics.py` (`DemographicQuery` class, comment 7) and `scope.py` (brand

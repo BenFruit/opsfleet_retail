@@ -78,6 +78,7 @@ class ChatApplication:
         self.options = options
         self.llm: GeminiClient | None = None
         self.runner: BigQueryRunner | None = None
+        self.embedder: Embedder | None = None
 
     def start(self) -> AnalyticalAgent:
         settings, options = self.settings, self.options
@@ -97,11 +98,12 @@ class ChatApplication:
         with startup_stage("bigquery_schema"):
             schema = SchemaService(self.runner).load_analysis_schema()
         with startup_stage("agent_init"):
+            self.embedder = Embedder.from_settings(settings)
             golden = settings.golden_retrieval_enabled
             agent = build_agent(
                 self.llm, schema, QueryService(self.runner, QueryLimits(minimum_cohort_size=options.min_cohort_size)),
                 manager_id=options.manager, entitlements=entitlements,
-                connect=connection_factory(settings), embedder=Embedder(self.llm, settings.reports_embedding_model),
+                connect=connection_factory(settings), embedder=self.embedder,
                 golden=golden, memory=True, persona_doc_id=settings.persona_google_doc_id,
                 golden_min_similarity=settings.golden_min_similarity,
             )
@@ -115,6 +117,8 @@ class ChatApplication:
         shutdown_tracing()
         if self.llm is not None:
             self.llm.close()
+        if self.embedder is not None:
+            self.embedder.close()
         if self.runner is not None:
             self.runner.client.close()
 
