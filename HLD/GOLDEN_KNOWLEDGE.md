@@ -2,7 +2,7 @@
 
 Requirement: the agent must not rely on BigQuery alone. It must reuse how human
 analysts interpreted earlier questions, the bucket must be updatable over time,
-and relevant knowledge must be supplied at query time. Stakeholder note (Harry):
+and relevant knowledge must be supplied at query time. Stakeholder note:
 the bucket is theoretical, so the format and a small seed set are ours to define,
 and AI-generated samples are fine if they are understood and reviewed.
 

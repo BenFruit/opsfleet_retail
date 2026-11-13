@@ -1,4 +1,4 @@
-# OpsFleet Retail Analyst: High-Level Design
+# Retail Analyst: High-Level Design
 
 A chat agent that lets non-technical retail executives ask analytical questions
 about sales and performance, discuss the answers, and turn them into reports with
@@ -29,7 +29,7 @@ not deployed. Setup and an example session are in the [README](../README.md).
 - **Data:** `bigquery-public-data.thelook_ecommerce` tables `orders`,
   `order_items`, `products`, `users`, read-only. The schema is fixed; brand scope
   is applied per table, not per dataset.
-- **PII rules (confirmed with Harry and Vlad of OpsFleet, [STAKEHOLDER_POLICY.md](STAKEHOLDER_POLICY.md)):**
+- **PII rules (confirmed with the client stakeholders, [STAKEHOLDER_POLICY.md](STAKEHOLDER_POLICY.md)):**
   names, email, street address, postal code and coordinates never reach the model
   or the output; age, gender, city, state, country and traffic source only in
   aggregates; customers may be referred to by `user_id`; filtering on a
@@ -320,8 +320,8 @@ options are in [§5.7](#57-observability).
   straightforward.
 - *LangChain SQL agents/toolkits*: hide the SQL execution path that the safety
   design must control.
-- *Mem0 for user memory*: more than needed for short explicit preferences; Vlad
-  confirmed a lightweight module is fine.
+- *Mem0 for user memory*: more than needed for short explicit preferences; the
+  client confirmed a lightweight module is fine.
 - *Qdrant / Vertex AI Vector Search*: justified only when measured corpus size or
   latency requires a separate index.
 
@@ -428,7 +428,7 @@ data. They cannot change access (the brand parameter is outside the model's
 reach) or confirm deletion (only a separate CLI command can).
 
 **Residual risk and production:** combining answers across questions
-(differencing) is not prevented, as agreed with Vlad. Production mitigations:
+(differencing) is not prevented, as agreed with the client. Production mitigations:
 authorized views as the primary boundary, per-user query budgets on demographic
 dimensions, consistent suppression, overlap detection between recent demographic
 queries, and differential privacy for high-risk aggregates where utility allows.

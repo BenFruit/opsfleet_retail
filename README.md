@@ -1,4 +1,4 @@
-# OpsFleet Retail Analyst (prototype)
+# Retail Analyst (prototype)
 
 A chat agent for non-technical retail executives: ask questions about sales and
 performance in plain language, discuss the answers, and turn them into reports

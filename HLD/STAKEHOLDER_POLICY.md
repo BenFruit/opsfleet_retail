@@ -1,6 +1,6 @@
 # Confirmed access and demographic policy
 
-Source: Slack clarifications from Harry and Vlad (OpsFleet). These clarifications
+Source: Slack clarifications from the client stakeholders. These clarifications
 resolve earlier policy questions. They do not imply every rule is
 already implemented; see implementation status below.
 

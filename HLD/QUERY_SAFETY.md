@@ -119,7 +119,7 @@ Blocked by this implementation:
 Residual limitations, NOT solved by k-suppression:
 - Two allowed aggregates over groups of 6 and 5 buyers can reveal the excluded
   person's contribution by subtraction when the attacker knows the membership.
-  Vlad explicitly allowed cross-question inference protection to remain design-only.
+  The client explicitly allowed cross-question inference protection to remain design-only.
 - Rare attributes, extreme statistics and external background knowledge can
   enable attribute inference even when every published group passes k.
 - Query validity does not prove intended date boundaries, status filters, grain,

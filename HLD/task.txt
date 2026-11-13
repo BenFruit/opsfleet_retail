@@ -2,7 +2,7 @@ AI Technical Assignment - Retail Company
 
 The Challenge: Design and Build a Data Analysis Chat Assistant
 
-You are building data analysis agent for a Retail Company's non-technical executive teams (OpsFleet is the client for this project and the Team Lead + Harry are the Project managers). These executives need to ask complex questions about sales, and performance (e.g., "Why are the users for sate X underspending? And how does it compare to users in state Y?", " Why did our churn rate spike last month? ", "create a report for Q1 including insights and actions items for Q2")
+You are building data analysis agent for a Retail Company's non-technical executive teams (the hiring team is the client for this project and its Team Lead and project manager act as Project managers). These executives need to ask complex questions about sales, and performance (e.g., "Why are the users for sate X underspending? And how does it compare to users in state Y?", " Why did our churn rate spike last month? ", "create a report for Q1 including insights and actions items for Q2")
 The agent will have access to:
 
 * The Database: A read-only connection to a SQL database containing raw transaction logs.
@@ -10,7 +10,7 @@ The agent will have access to:
 
 The Task: Design a production-ready full High-Level Design (HLD), accompanied by a detailed technical explanation, and build a data analysis chat-agent prototype that allows executives to ask question about this data naturally and discuss about it. The system should be easily extendable for new capabilities (generating graphs, sending reports via mail, searching the web for trends, etc).
 Note: We expect to see what services you aim to use, what the communication is between the components, how and where data is stored and handled. The "detailed technical explanation" needs to be detailed enough for us to understand how this system will function in production.
-Feel free to ask about any assumptions you need to make, or follow ups on requirements, we (OpsFleet team) are the client for this project.
+Feel free to ask about any assumptions you need to make, or follow ups on requirements, we (the hiring team) are the client for this project.
 
 Requirements:
 
